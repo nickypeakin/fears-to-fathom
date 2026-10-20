@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Floor 50</title>
+  <meta name="description" content="A co-op horror game in your browser. You and your friends ride up to your 50th-floor apartment with a stranger who follows you home. All night, he knocks. Don't let him in.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120e0c'/%3E%3Crect x='16' y='6' width='32' height='58' fill='%234a2c1c'/%3E%3Ccircle cx='32' cy='26' r='4' fill='%23e8c070'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/special-elite/latin-400.css">
+  <link rel="stylesheet" href="vendor/inter/latin-400.css">
+  <link rel="stylesheet" href="vendor/inter/latin-600.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/three-addons/" } }
+  </script>
+</head>
+<body class="menu">
+  <canvas id="gl"></canvas>
+
+  <div id="hud" hidden>
+    <ul id="team"></ul>
+    <div id="clockBox"><div id="clock"></div><small>until 6:00 AM</small></div>
+    <div id="objective"></div>
+    <div id="toasts"></div>
+    <div id="cross"></div>
+    <div id="prompt"></div>
+    <div id="talk"></div>
+    <div id="subs"></div>
+    <div id="flash"></div>
+    <div id="banner" hidden><h1></h1><p></p></div>
+    <div id="meters">
+      <div class="meter" id="lockMeter" hidden><label>DEADBOLT</label><div class="bar"><i></i></div></div>
+      <div class="meter" id="breathMeter" hidden><label>BREATH</label><div class="bar"><i></i></div></div>
+      <div class="meter" id="staminaMeter" hidden><label>STAMINA</label><div class="bar"><i></i></div></div>
+      <div id="flashicon">PHONE LIGHT</div>
+    </div>
+  </div>
+
+  <div id="screens">
+    <section id="title" class="screen">
+      <div class="logo">
+        <h1>FLOOR 50</h1>
+        <p class="tag">Don't let him in.</p>
+      </div>
+      <div class="menu">
+        <label class="field">YOUR NAME <input id="name" maxlength="16" autocomplete="off" spellcheck="false"></label>
+        <button data-act="solo">PLAY SOLO <small>with three friends played by the computer</small></button>
+        <button data-act="host">HOST A GAME <small>play with up to 3 friends online</small></button>
+        <label class="field">GOT A CODE FROM A FRIEND?</label>
+        <div class="join">
+          <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <button data-act="join">JOIN</button>
+        </div>
+        <div class="row">
+          <button class="small" data-act="help">HOW TO PLAY</button>
+          <button class="small" data-act="settings">SETTINGS</button>
+          <button class="small" data-act="nettest">TEST CONNECTION</button>
+        </div>
+        <p id="titleMsg" class="msg"></p>
+      </div>
+      <p class="fine">Headphones recommended. Everything you see and hear is made in code.</p>
+    </section>
+
+    <section id="invite" class="screen" hidden>
+      <h2 class="head">YOU'RE INVITED</h2>
+      <p class="sub" id="inviteWho"></p>
+      <div class="menu">
+        <label class="field">YOUR NAME <input id="inviteName" maxlength="16" autocomplete="off" spellcheck="false"></label>
+        <button data-act="inviteJoin" id="inviteBtn" class="big">JOIN GAME</button>
+        <div class="row">
+          <button class="small" data-act="nettest">TEST CONNECTION</button>
+          <button class="small" data-act="leave">MAIN MENU</button>
+        </div>
+        <p id="inviteMsg" class="msg"></p>
+      </div>
+    </section>
+
+    <section id="lobby" class="screen" hidden>
+      <h2 class="head">LOBBY</h2>
+      <div id="lobbyCode" class="code"></div>
+      <div id="inviteBox" class="invitebox" hidden>
+        <p>Send your friends this link. It takes them straight to your lobby:</p>
+        <div class="join">
+          <input id="inviteLink" readonly>
+          <button class="small" data-act="copy">COPY</button>
+          <button class="small" data-act="share" id="shareBtn" hidden>SHARE</button>
+        </div>
+        <p class="hint">Or they can open the game and type the code. Keep this tab open while you play: your browser runs the game for everyone.</p>
+      </div>
+      <p id="lobbyMsg" class="msg"></p>
+      <ol id="slots"></ol>
+      <label class="check" id="fillRow"><input type="checkbox" id="fill" checked> Fill empty spots with computer friends</label>
+      <div class="row center">
+        <button data-act="start" id="startBtn">START THE NIGHT</button>
+        <button class="small" data-act="leave">LEAVE</button>
+      </div>
+      <p id="lobbyWait" class="msg"></p>
+    </section>
+
+    <section id="help" class="screen" hidden>
+      <h2 class="head">HOW TO PLAY</h2>
+      <div class="text">
+        <p>You and your friends just got home to your apartment on the 50th floor. A man in a long coat rode up in the elevator with you, and followed you down the hall. You locked the door. He knocked.</p>
+        <p><b>Survive until 6 AM.</b> He'll keep coming back to knock. If nobody answers he gets louder, then he starts working on the lock, and if the deadbolt gives, he's in. <b>Opening the door makes him stop:</b> sometimes he's just gone, sometimes he wants to talk, and sometimes he goes and finds someone else to wear.</p>
+        <p>Other people knock too: the neighbour from 50D, the building super, a delivery driver, the police. Some of them are exactly who they say they are. Some of them are him. <b>Look through the peephole</b> before you open up. People blink and fidget and look around. Something wearing a person doesn't. Listen to how they knock, and to what they say through the door.</p>
+        <p>The <b>chain</b> lets you open the door a crack to see who's really there. Hold it open too long on the wrong person and the chain won't hold. Only open the door all the way for people you're sure about. Turn people away and he may find them later.</p>
+        <p>If he gets inside the lights go out. <b>Hide</b> in a closet, a wardrobe, the shower or under a bed, and hold your breath when he's close. He'll take one of you and leave.</p>
+        <table>
+          <tr><td>WASD</td><td>walk</td></tr>
+          <tr><td>Mouse</td><td>look</td></tr>
+          <tr><td>Shift</td><td>run</td></tr>
+          <tr><td>C</td><td>crouch</td></tr>
+          <tr><td>E</td><td>use: peephole, deadbolt, chain, handle, hide</td></tr>
+          <tr><td>1 2 3</td><td>talk through the door: who is it / what do you want / go away</td></tr>
+          <tr><td>Space</td><td>hold your breath while hiding</td></tr>
+          <tr><td>F</td><td>phone light</td></tr>
+          <tr><td>Esc</td><td>pause</td></tr>
+        </table>
+      </div>
+      <div class="row center"><button class="small" data-act="back">BACK</button></div>
+    </section>
+
+    <section id="settings" class="screen" hidden>
+      <h2 class="head">SETTINGS</h2>
+      <div class="text">
+        <label class="slider">MOUSE SENSITIVITY <input type="range" id="sens" min="0.2" max="3" step="0.05"></label>
+        <label class="slider">VOLUME <input type="range" id="vol" min="0" max="1" step="0.02"></label>
+        <label class="check"><input type="checkbox" id="invert"> Invert mouse Y</label>
+        <label class="check"><input type="checkbox" id="voices"> Spoken voices (uses your browser's built-in voices; subtitles always show)</label>
+        <label class="check"><input type="checkbox" id="grain"> Film grain and vignette</label>
+      </div>
+      <div class="row center"><button class="small" data-act="back">BACK</button></div>
+    </section>
+
+    <section id="pause" class="screen" hidden>
+      <h2 class="head">PAUSED</h2>
+      <p id="pauseNote" class="msg"></p>
+      <div class="menu narrow">
+        <button data-act="resume">RESUME</button>
+        <button class="small" data-act="help">HOW TO PLAY</button>
+        <button class="small" data-act="settings">SETTINGS</button>
+        <button class="small" data-act="quit">LEAVE GAME</button>
+      </div>
+    </section>
+
+    <section id="clickToPlay" class="screen see-through" hidden>
+      <button data-act="resume">CLICK TO PLAY</button>
+    </section>
+
+    <section id="results" class="screen" hidden>
+      <h2 class="head" id="resultHead"></h2>
+      <ol id="resultList"></ol>
+      <div class="row center">
+        <button data-act="again" id="againBtn">PLAY AGAIN</button>
+        <button class="small" data-act="tolobby" id="toLobbyBtn">BACK TO LOBBY</button>
+        <button class="small" data-act="menu">MAIN MENU</button>
+      </div>
+      <p id="resultWait" class="msg"></p>
+    </section>
+
+    <section id="loading" class="screen see-through" hidden>
+      <p class="loading">Building the city...</p>
+    </section>
+  </div>
+  <noscript>This game needs JavaScript.</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

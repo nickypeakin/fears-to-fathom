@@ -1,0 +1,22 @@
+{
+  "name": "floor-50",
+  "version": "1.0.0",
+  "description": "A co-op 3D horror game in the browser. You and your friends ride the elevator up to your 50th-floor apartment with a stranger who follows you home, and spend the night deciding who to let in.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "node scripts/build.js && node scripts/serve.js",
+    "test": "node test/sim.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fontsource/inter": "5.1.0",
+    "@fontsource/special-elite": "5.1.0",
+    "peerjs": "1.5.5",
+    "three": "0.170.0"
+  }
+}
