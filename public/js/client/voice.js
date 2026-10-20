@@ -1,17 +1,18 @@
 // Spoken lines, using the voices built into the browser (speechSynthesis).
-// He speaks low and slow; visitors and friends get their own voices; when
-// he's wearing someone, their voice drops and drags. Subtitles always show,
-// so a browser without voices loses nothing but the sound. Can be switched
-// off in Settings.
+// The narrator, dispatch on the radio, the ranger, your friends' shouts,
+// and Wade, low and slow and friendly. Subtitles always show, so a browser
+// without voices loses nothing but the sound. Can be switched off in
+// Settings.
 
 const STYLE = {
-  him: { pitch: 0.15, rate: 0.72, sex: 'm' },
-  whisper: { pitch: 0.1, rate: 0.6, sex: 'm', volume: 0.4 },
-  neighbor: { pitch: 1.25, rate: 0.92, sex: 'f' },
-  delivery: { pitch: 1.0, rate: 1.1, sex: 'm' },
-  super: { pitch: 0.75, rate: 0.95, sex: 'm' },
-  police: { pitch: 0.85, rate: 1.0, sex: 'm' },
-  friend: { pitch: 1.0, rate: 1.05, sex: null },
+  wade: { pitch: 0.55, rate: 0.82, sex: 'm' },
+  whisper: { pitch: 0.2, rate: 0.62, sex: 'm', volume: 0.45 },
+  radio: { pitch: 1.1, rate: 1.06, sex: 'f', volume: 0.8 },
+  radioWade: { pitch: 0.4, rate: 0.72, sex: 'm', volume: 0.75 },
+  ranger: { pitch: 0.8, rate: 0.98, sex: 'm' },
+  police: { pitch: 1.0, rate: 1.05, sex: 'f' },
+  narrator: { pitch: 0.9, rate: 0.9, sex: 'm', volume: 0.9 },
+  friend: { pitch: 1.0, rate: 1.08, sex: null },
 };
 
 const FEMALE = /female|woman|samantha|victoria|karen|zira|susan|moira|tessa|fiona|serena|hazel|kate|allison|ava|joanna|salli|kimberly|emma|amy|aria|jenny|libby|sonia/i;
@@ -39,15 +40,11 @@ class Voice {
     return list[salt % list.length];
   }
 
-  // kind: him, whisper, neighbor, delivery, super, police, friend, or
-  // 'possessed:<kind>' for someone he's wearing;
-  // salt picks between voices so different friends sound different
+  // kind: one of STYLE's keys; salt picks between voices so different
+  // friends sound different
   say(text, kind = 'friend', { salt = 0, sex = null } = {}) {
-    if (!this.enabled || !this.synth || !text || text === '...') return;
-    // someone he's wearing sounds like them, only slower and lower
-    const worn = kind.startsWith('possessed:');
-    const base = STYLE[worn ? kind.slice(10) : kind] || STYLE.friend;
-    const st = worn ? { ...base, pitch: base.pitch * 0.72, rate: base.rate * 0.82 } : base;
+    if (!this.enabled || !this.synth || !text || text === '...' || text.startsWith('(')) return;
+    const st = STYLE[kind] || STYLE.friend;
     // keep up with the conversation rather than queueing a backlog
     if (this.synth.pending || this.synth.speaking) {
       this.queued = (this.queued || 0) + 1;

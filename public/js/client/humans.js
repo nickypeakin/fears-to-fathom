@@ -372,14 +372,10 @@ export const LOOKS = {
   friend1: { sex: 'f', skin: 0x8a5638, iris: 0x2d1d12, hair: 'long', hairColor: 0x120c09, top: 'jacket', topColor: 0x5a7fa8, inner: 0xf0ece4, bottom: 'jeans', bottomColor: 0x1e2229, shoes: 'sneaker', shoeColor: 0x222222, height: 1.66 },
   friend2: { sex: 'm', skin: 0xb77a52, iris: 0x3b2817, hair: 'curly', hairColor: 0x15100c, top: 'bomber', topColor: 0x3c5a3a, inner: 0x1e1e1e, bottom: 'trousers', bottomColor: 0x8a7a5c, shoes: 'sneaker', shoeColor: 0xb8402a, height: 1.82 },
   friend3: { sex: 'f', skin: 0xf0c8a6, iris: 0x45708a, hair: 'pony', hairColor: 0x9a6a3a, top: 'sweater', topColor: 0xc9932f, bottom: 'skirt', bottomColor: 0x2b2b33, legs: 0x1a1a1f, shoes: 'boot', shoeColor: 0x3a2618, height: 1.63 },
-  // him
-  stalker: { sex: 'm', skin: 0xcfb6a2, iris: 0x111111, hair: 'slick', hairColor: 0x0c0a09, top: 'coat', topColor: 0x1b1b1e, inner: 0x5e5e62, bottom: 'trousers', bottomColor: 0x141416, shoes: 'dress', shoeColor: 0x0a0a0a, height: 1.9, thin: 0.92, gloves: 0x0b0b0b, face: { w: 0.95, jaw: 0.16, chin: 0.009, nose: 1.1, brow: 0.006, mouth: 0.92 } },
-  // people who knock
-  neighbor: { sex: 'f', old: true, skin: 0xe8c4aa, iris: 0x5a6a5a, hair: 'bun', hairColor: 0xb8b4ae, top: 'cardigan', topColor: 0x8a5a78, inner: 0xe8e0d0, bottom: 'longskirt', bottomColor: 0x4a4a52, legs: 0xd9b89c, shoes: 'flat', shoeColor: 0x3a2a22, height: 1.6, glasses: true },
-  delivery: { sex: 'm', skin: 0xc28c66, iris: 0x2a1c10, hair: 'short', hairColor: 0x1a120c, hat: 'cap', hatColor: 0xb3201c, top: 'jacket', topColor: 0xb3201c, inner: 0x1c1c1c, bottom: 'jeans', bottomColor: 0x2e3a52, shoes: 'sneaker', shoeColor: 0x1a1a1a, height: 1.76, prop: 'pizza' },
-  super: { sex: 'm', skin: 0xd9a888, iris: 0x4a3a2a, hair: 'balding', hairColor: 0x6a6460, mustache: true, top: 'workshirt', topColor: 0x5a6e7e, bottom: 'trousers', bottomColor: 0x2a2f3a, shoes: 'boot', shoeColor: 0x2a1c12, height: 1.74, heavy: 1.12, prop: 'toolbox' },
-  police: { sex: 'm', skin: 0x6e4630, iris: 0x1e140c, hair: 'buzz', hairColor: 0x0c0a08, hat: 'police', hatColor: 0x161c2c, top: 'uniform', topColor: 0x202a40, bottom: 'trousers', bottomColor: 0x1a2234, shoes: 'boot', shoeColor: 0x0c0c0c, height: 1.84 },
-  concierge: { sex: 'm', skin: 0xe0b090, iris: 0x3a2a1a, hair: 'short', hairColor: 0x5a4a3a, top: 'suit', topColor: 0x22242c, inner: 0xf2f0ea, tie: 0x7a1a22, bottom: 'trousers', bottomColor: 0x22242c, shoes: 'dress', shoeColor: 0x111111, height: 1.77 },
+  // the old lookout, who says he's a hiker
+  wade: { sex: 'm', skin: 0xd8b49a, iris: 0x2a3a38, hair: 'short', hairColor: 0x3a2e24, mustache: true, hat: 'cap', hatColor: 0x3e4630, top: 'bomber', topColor: 0x4e4c36, inner: 0x6a5a40, bottom: 'jeans', bottomColor: 0x2e3440, shoes: 'boot', shoeColor: 0x3a2a1a, height: 1.88, thin: 0.9, face: { w: 0.94, jaw: 0.15, chin: 0.008, nose: 1.12, brow: 0.007, mouth: 0.9 } },
+  // Ranger Pruitt, who drops you off
+  ranger: { sex: 'm', skin: 0xc8946c, iris: 0x3a2a1a, hair: 'short', hairColor: 0x6a6058, mustache: true, hat: 'cap', hatColor: 0x2e4a2e, top: 'uniform', topColor: 0x9a8a62, bottom: 'trousers', bottomColor: 0x3e4a32, shoes: 'boot', shoeColor: 0x3a2a1a, height: 1.8, heavy: 1.08 },
 };
 export const FRIEND_LOOKS = ['friend0', 'friend1', 'friend2', 'friend3'];
 

@@ -1,8 +1,8 @@
 // The final picture. Scenes render in HDR into a multisampled target; a
-// cheap two-level bloom makes lamps and city lights glow; then one pass
-// tone-maps (ACES), adds a touch of film grain and vignette, letterboxes
-// cutscenes, fades, and, when you put your eye to the door, bends the
-// whole view through a fisheye peephole lens.
+// cheap two-level bloom makes lamps and the low sun glow; then one pass
+// tone-maps (ACES), adds grain and vignette (and, if you like, the wobble,
+// smear and scanlines of an old camcorder tape), letterboxes cutscenes,
+// fades, and, through the binoculars, masks the view to two round lenses.
 
 import * as THREE from 'three';
 
@@ -38,7 +38,7 @@ const blurFrag = /* glsl */`
 const finalFrag = /* glsl */`
   uniform sampler2D tex, bloomA, bloomB;
   uniform vec2 res;
-  uniform float aspect, time, exposure, bloom, grain, vignette, bars, fade, fear, staticAmt, glitch, peep, peepFov, saturation;
+  uniform float aspect, time, exposure, bloom, grain, vignette, bars, fade, fear, staticAmt, glitch, binoc, vhs, saturation;
   uniform vec3 fadeColor;
   varying vec2 vUv;
 
@@ -57,7 +57,7 @@ const finalFrag = /* glsl */`
   void main() {
     vec2 uv = vUv;
     vec2 c = (uv - 0.5) * vec2(aspect, 1.0);   // screen-height units
-    float mask = 1.0, rim = 0.0;
+    float mask = 1.0;
     float ca = 0.0004 + fear * 0.006;
 
     // tape tearing when something is very wrong
@@ -68,41 +68,40 @@ const finalFrag = /* glsl */`
       uv.x += step(1.0 - glitch * 0.4, h(vec2(row, floor(time * 18.0)))) * (h(vec2(row, time)) - 0.5) * 0.16 * glitch;
     }
 
-    if (peep > 0.5) {
-      // equidistant fisheye: angle grows linearly with distance from centre
-      float R = 0.47;
-      float r = length(c);
-      float rho = r / R;
-      float th = min(rho, 1.08) * radians(50.0);
-      float k = tan(th) / tan(radians(peepFov * 0.5));
-      vec2 d = r > 1e-5 ? c / r : vec2(0.0);
-      uv = 0.5 + d * k * 0.5 * vec2(1.0 / aspect, 1.0);
-      mask = 1.0 - smoothstep(0.97, 1.0, rho);
-      rim = smoothstep(0.93, 1.0, rho) * (1.0 - smoothstep(1.0, 1.06, rho));
-      ca += rho * rho * 0.004;
-    } else {
-      uv = 0.5 + (uv - 0.5) * (1.0 + fear * 0.02 * dot(c, c));
+    // the tape: each line wobbles a little, and a tracking band rolls by
+    if (vhs > 0.0) {
+      float line = floor(vUv.y * res.y * 0.5);
+      uv.x += (h(vec2(line, floor(time * 24.0))) - 0.5) * 0.0011 * vhs;
+      uv.x += sin(vUv.y * 36.0 + time * 1.7) * 0.0005 * vhs;
+      float band = 1.0 - smoothstep(0.0, 0.012, abs(fract(vUv.y + time * 0.045) - 0.5));
+      uv.x += band * 0.004 * vhs * h(vec2(floor(vUv.y * 300.0), time));
+      ca += 0.0013 * vhs;
     }
+    uv = 0.5 + (uv - 0.5) * (1.0 + fear * 0.02 * dot(c, c));
 
     vec3 col = grab(uv, ca);
-    if (peep > 0.5) {
-      // soft at the edge of the lens, dimmer too
-      float r = length(c) / 0.47;
-      vec3 soft = (grab(uv + vec2(0.003, 0.0), ca) + grab(uv - vec2(0.003, 0.0), ca) + grab(uv + vec2(0.0, 0.003), ca) + grab(uv - vec2(0.0, 0.003), ca)) * 0.25;
-      col = mix(col, soft, smoothstep(0.55, 0.95, r));
-      col *= 1.0 - 0.55 * smoothstep(0.5, 1.0, r);
+    if (binoc > 0.5) {
+      // two round lenses, a little overlapped
+      float r = 0.43;
+      float dl = length(c - vec2(-0.21, 0.0)), dr = length(c - vec2(0.21, 0.0));
+      float d = min(dl, dr);
+      mask = 1.0 - smoothstep(r - 0.02, r, d);
+      col *= 1.0 - 0.35 * smoothstep(r * 0.55, r, d);
     }
     col = aces(col * exposure);
     float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col = mix(vec3(l), col, saturation);
+    col = mix(vec3(l), col, saturation * (1.0 - 0.18 * vhs));
+    if (vhs > 0.0) {
+      col = col * (1.0 - 0.05 * vhs) + vec3(0.016, 0.013, 0.02) * vhs;
+      col *= 1.0 - 0.07 * vhs * step(0.5, fract(vUv.y * res.y * 0.5));
+    }
 
     // grain and vignette
     col += (h(vUv * res + fract(time) * 100.0) - 0.5) * grain;
     float vig = smoothstep(1.05, 0.25, length(c * vec2(0.9, 1.1)));
     col *= mix(1.0, vig, vignette + fear * 0.35);
 
-    // the rest of the door around the peephole, and the brass ring
-    if (peep > 0.5) col = mix(vec3(0.012, 0.009, 0.007) + vec3(0.09, 0.06, 0.03) * rim, col, mask);
+    col *= mask;
 
     // static
     float s = h(vUv * res * 0.5 + floor(time * 30.0));
@@ -136,7 +135,7 @@ export class Post {
       res: { value: new THREE.Vector2(4, 4) }, aspect: { value: 1 }, time: { value: 0 },
       exposure: { value: 1 }, bloom: { value: 0.8 }, grain: { value: 0.025 }, vignette: { value: 0.5 },
       bars: { value: 0 }, fade: { value: 0 }, fadeColor: { value: new THREE.Color(0, 0, 0) },
-      fear: { value: 0 }, staticAmt: { value: 0 }, glitch: { value: 0 }, peep: { value: 0 }, peepFov: { value: 110 }, saturation: { value: 1 },
+      fear: { value: 0 }, staticAmt: { value: 0 }, glitch: { value: 0 }, binoc: { value: 0 }, vhs: { value: 0 }, saturation: { value: 1 },
     };
     this.final = mk(finalFrag, this.u);
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.final);
@@ -204,7 +203,8 @@ export class Post {
     u.fear.value = fx.fear || 0;
     u.staticAmt.value = fx.staticAmt || 0;
     u.glitch.value = fx.glitch || 0;
-    u.peep.value = fx.peep ? 1 : 0;
+    u.binoc.value = fx.binoc ? 1 : 0;
+    u.vhs.value = this.grainOn ? 1 : 0;
     u.saturation.value = fx.saturation ?? 1;
     u.grain.value = this.grainOn ? 0.022 + (fx.noise || 0) : (fx.noise || 0);
     u.vignette.value = this.grainOn ? 0.45 : 0.15;

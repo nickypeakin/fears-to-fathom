@@ -1,13 +1,13 @@
 {
-  "name": "floor-50",
+  "name": "cinder-peak",
   "version": "1.0.0",
-  "description": "A co-op 3D horror game in the browser. You and your friends ride the elevator up to your 50th-floor apartment with a stranger who follows you home, and spend the night deciding who to let in.",
+  "description": "A co-op 3D horror game in the browser. You and your friends spend three days as volunteer fire lookouts on a tower in the mountains. The lookout before you never came down.",
   "type": "module",
   "private": true,
   "scripts": {
     "build": "node scripts/build.js",
     "dev": "node scripts/build.js && node scripts/serve.js",
-    "test": "node test/sim.test.js"
+    "test": "node test/sim.test.js && node test/walk.test.js"
   },
   "engines": {
     "node": ">=20"

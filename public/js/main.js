@@ -1,14 +1,13 @@
-// Start-up and menu flow: title screen, solo / host / join, lobby, the
-// night itself, pause and results.
+// Start-up and menu flow: title screen, alone / host / join, lobby, the
+// game itself, pause and results.
 
 import * as THREE from 'three';
 import { Post } from './client/post.js';
 import { Input } from './client/input.js';
 import { Hud, showScreen, screenShown, renderLobby, renderResults, setMsg } from './client/ui.js';
 import { HostLink, GuestLink, testConnection } from './client/net.js';
-import { Tower } from './client/world.js';
-import { Backdrop } from './client/city.js';
-import { Ground } from './client/ground.js';
+import { Lookout } from './client/world.js';
+import { Backdrop } from './client/backdrop.js';
 import { Game } from './client/game.js';
 import { makePerson, LOOKS } from './client/humans.js';
 import { Attract } from './client/attract.js';
@@ -31,16 +30,17 @@ renderer.toneMapping = THREE.NoToneMapping;
 const post = new Post(renderer);
 const input = new Input(canvas);
 const hud = new Hud();
-// generating the city takes a moment: say so before the page goes quiet
+// growing the forest takes a moment: say so before the page goes quiet
 showScreen('loading');
 await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
-const world = new Tower(renderer);
-let ground = null;
+const world = new Lookout(renderer);
 const attract = new Attract(world);
 
 // ------------------------------------------------------------- settings --
 const params = new URLSearchParams(location.search);
-const SETTINGS_KEY = 'floor-50';
+// ?seg=3 starts the story at that part (for testing)
+const startAt = Math.max(0, Math.min(6, Number(params.get('seg')) || 0));
+const SETTINGS_KEY = 'cinder-peak';
 const settings = { name: '', sens: 1, vol: 0.8, invert: false, voices: true, grain: true, graphics: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch { /* private mode */ }
 const save = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* private mode */ } };
@@ -49,7 +49,7 @@ voice.volume = settings.vol;
 voice.enabled = settings.voices && !params.has('autotest');
 post.grainOn = settings.grain;
 
-const DEFAULT_NAMES = ['Alex', 'Sam', 'Jordan', 'Casey', 'Riley', 'Morgan', 'Jamie', 'Taylor'];
+const DEFAULT_NAMES = ['Alex', 'Sam', 'Jordan', 'Casey', 'Riley', 'Morgan', 'Jamie', 'Taylor', 'Jack', 'Nora'];
 $('name').value = settings.name || DEFAULT_NAMES[Math.floor(Math.random() * DEFAULT_NAMES.length)];
 $('sens').value = settings.sens;
 $('vol').value = settings.vol;
@@ -96,7 +96,7 @@ function applyGraphics() {
   if (renderer.shadowMap.enabled !== preset.shadows) {
     renderer.shadowMap.enabled = preset.shadows;
     // every material has to be rebuilt with (or without) shadows
-    for (const sc of [world.scene, ground && ground.scene]) sc?.traverse((o) => {
+    for (const sc of [world.scene, world.far]) sc.traverse((o) => {
       if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
     });
   }
@@ -135,14 +135,13 @@ Backdrop.configure(preset.sky);
 renderer.shadowMap.enabled = preset.shadows;
 resize();
 
-// Compile every shader the night will need now, while the title is up, so
-// the first visitor (or the lights going out) doesn't stall the game.
+// Compile every shader the game will need now, while the title is up, so
+// nobody's first sight of Wade (or of the ranger) stalls the game.
 function prewarm(scene, camera) {
   const people = new THREE.Group();
   Object.keys(LOOKS).forEach((k, i) => {
     const p = makePerson(k);
     p.position.set(i * 0.8, -60, 0);
-    if (k === 'neighbor') p.userData.rig.setPossessed(true);
     people.add(p);
   });
   scene.add(people);
@@ -150,13 +149,6 @@ function prewarm(scene, camera) {
   scene.remove(people);
 }
 prewarm(world.scene, attract.camera);
-// build the street for the opening while nobody's doing anything
-function buildGround() {
-  if (ground) return;
-  ground = new Ground(renderer);
-  prewarm(ground.scene, attract.camera);
-}
-setTimeout(() => (window.requestIdleCallback || ((f) => setTimeout(f, 1)))(buildGround), 2500);
 
 function playerName() {
   const n = $('name').value.trim() || 'Friend';
@@ -189,7 +181,7 @@ function wire(l) {
   });
   l.on('status', (m) => { if (l === link && !game) setMsg(l.isHost ? 'lobbyMsg' : guestMsgId(), m.text); });
   l.on('start', (m) => { if (l === link) startGame(m); });
-  l.on('over', (m) => { if (l === link) endGame(m.results, m.dawn); });
+  l.on('over', (m) => { if (l === link) endGame(m); });
   l.on('closed', (m) => { if (l === link) { leave(); setMsg('titleMsg', m.text); } });
   l.on('neterror', (m) => { if (l === link) setMsg('lobbyMsg', m.text); });
 }
@@ -198,14 +190,14 @@ const actions = {
   solo() {
     begin();
     solo = true;
-    link = new HostLink(playerName());
+    link = new HostLink(playerName(), { startAt });
     wire(link);
-    link.send({ t: 'start', fill: true });
+    link.send({ t: 'start' });
   },
   host() {
     begin();
     solo = false;
-    link = new HostLink(playerName(), { online: true });
+    link = new HostLink(playerName(), { online: true, startAt });
     wire(link);
     showScreen('lobby');
   },
@@ -256,9 +248,9 @@ const actions = {
     else if (document.execCommand('copy')) done();
   },
   share() {
-    navigator.share?.({ title: 'Floor 50', text: 'Spend the night on floor 50 with me.', url: $('inviteLink').value }).catch(() => {});
+    navigator.share?.({ title: 'Cinder Peak', text: 'Three days in a fire lookout. Come keep watch with me.', url: $('inviteLink').value }).catch(() => {});
   },
-  start() { link?.send({ t: 'start', fill: $('fill').checked }); },
+  start() { link?.send({ t: 'start' }); },
   again() { link?.send({ t: 'start' }); },
   tolobby() { link?.send({ t: 'tolobby' }); },
   leave: () => leave(),
@@ -296,15 +288,13 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-act]');
   if (b && actions[b.dataset.act]) actions[b.dataset.act]();
 });
-$('fill').addEventListener('change', (e) => link?.send({ t: 'fill', fill: e.target.checked }));
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') actions.join(); });
 
 // ---------------------------------------------------------------- night --
 function startGame(m) {
   if (game) disposeGame();
-  buildGround();
   hud.reset();
-  game = new Game({ renderer, post, world, ground, link, start: m, hud, input, settings });
+  game = new Game({ renderer, post, world, link, start: m, hud, input, settings });
   game.resize(innerWidth, innerHeight);
   setPaused(false);
   showScreen(null);
@@ -313,18 +303,19 @@ function startGame(m) {
   window.__game = game; // handle for automated browser tests
 }
 
-function endGame(results, dawn) {
+function endGame(over) {
   const amHost = !!link?.isHost;
   const show = () => {
     if (!game) return;
     disposeGame();
     input.unlock();
-    renderResults(results, link?.id, amHost, dawn);
+    renderResults(over, link?.id, amHost);
     $('toLobbyBtn').hidden = !amHost || solo;
     showScreen('results');
     sound.setScene('title', 2);
   };
-  if (dawn && game) { game.dawn(); setTimeout(show, 4500); } else setTimeout(show, 1200);
+  if (game) game.over();
+  setTimeout(show, over.ending === 'escaped' ? 600 : 2500);
 }
 
 function disposeGame() {
@@ -369,7 +360,7 @@ canvas.addEventListener('click', () => { if (game && !input.locked) actions.resu
 
 // ----------------------------------------------------------------- loop --
 let last = performance.now();
-const titleFx = { fade: 0, bars: 0, exposure: 1.05 };
+const titleFx = { fade: 0, bars: 0, exposure: 1.0 };
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;

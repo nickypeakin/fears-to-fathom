@@ -1,18 +1,19 @@
-// The title screen's background: the empty apartment at dusk, the camera
-// drifting slowly past the windows while the city lights come on.
+// The title screen's background: the lookout at sundown, the camera
+// drifting round the tower, along the catwalk and through the cab.
 
 import * as THREE from 'three';
 
 const SHOTS = [
-  { from: [3.4, 1.5, 4.6], to: [2.6, 1.45, 5.6], look: [-6, 1.0, 9], dur: 22 },
-  { from: [1.2, 1.6, 3.4], to: [1.9, 1.55, 4.4], look: [-8, 0.6, 2], dur: 20 },
-  { from: [3.9, 1.3, 7.6], to: [2.9, 1.35, 7.9], look: [-2, 1.4, 14], dur: 20 },
+  { from: [16, 1.6, 15], to: [12, 2.4, 17], look: [0, 12, 0], dur: 20 },
+  { from: [-3.1, 15.5, 3.1], to: [-3.1, 15.6, -1.0], look: [-60, 8, -30], dur: 20 },
+  { from: [1.6, 15.6, 1.8], to: [0.4, 15.5, 1.9], look: [-12, 13, -14], dur: 18 },
+  { from: [-22, 4, -12], to: [-18, 7, -16], look: [0, 13, 0], dur: 18 },
 ];
 
 export class Attract {
   constructor(world) {
     this.world = world;
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.05, 150);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.05, 1100);
     this.t = 0;
     this.i = 0;
   }
@@ -32,8 +33,8 @@ export class Attract {
     c.position.set(...s.from.map((v, j) => v + (s.to[j] - v) * e));
     c.lookAt(...s.look);
     const W = this.world;
-    W.setHour(20.25);
-    W.setPower(1, 1);
+    W.setHour(20.05);
+    W.setState({ gen: true, light: true });
     W.update(dt, performance.now() / 1000, {});
   }
 

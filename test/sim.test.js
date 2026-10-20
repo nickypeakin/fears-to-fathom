@@ -1,128 +1,223 @@
-// Headless check of the host simulation: whole nights with a scripted
-// player and three bots. Each scripted player has a habit at the door
-// (never answers, answers with the chain on, opens it wide for anyone,
-// checks who it is first), and every night has to run the cutscene, bring
-// knocks and visitors, resolve them, and end at dawn or with everyone gone.
-// Usage: npm test
+// Plays the whole story on the host simulation, in Node, with scripted
+// players who do what the objectives ask (and sometimes the wrong thing),
+// making different choices each run. Checks every run reaches an ending
+// without errors and that the pieces along the way work: supplies counted,
+// the generator, the radio, Wade's visits, the trapdoor, the truck, the
+// phone.
+//
+// usage: node test/sim.test.js
 
-import assert from 'node:assert/strict';
 import { Match } from '../public/js/host/match.js';
-import { TICK, INTRO_LEN, NIGHT_LEN, PLAYER_R } from '../public/js/shared/config.js';
-import { DOOR, HIDES, PLAYER_SOLIDS, ROOMS, SPOTS } from '../public/js/shared/layout.js';
-import { Grid, walkTo } from '../public/js/shared/nav.js';
+import { SPOTS, CAB_Y, HATCH } from '../public/js/shared/layout.js';
+import { SEGMENTS } from '../public/js/shared/story.js';
+import { INTRO_LEN, TICK } from '../public/js/shared/config.js';
+import { terrainH } from '../public/js/shared/terrain.js';
 import { makeRng } from '../public/js/shared/rng.js';
 
-const grid = new Grid(PLAYER_SOLIDS, PLAYER_R);
-
-// A stand-in for a person, talking to the match exactly like a client.
-//   habit 'ignore': never touches the door (he should break in eventually)
-//   habit 'chain':  opens with the chain on, closes again after a look
-//   habit 'wide':   unlocks, takes the chain off and opens it all the way
-//   habit 'smart':  looks, opens wide only for people who aren't possessed
-function fakeHuman(m, id, habit, seed) {
-  const me = { x: 0, z: 0, ry: 0, rng: makeRng(seed), busy: 0, hidden: false };
-  const act = (a) => m.handle(id, { t: 'door', a });
-  return (dt) => {
-    const p = m.player(id);
-    if (p.st !== 'in' || m.phase !== 'night') return;
-    if (me.x === 0) Object.assign(me, { x: p.x, z: p.z });
-    // he's in: run and hide
-    if (m.hunt) {
-      if (p.hide >= 0) return;
-      const free = HIDES.filter((h) => !m.players.some((q) => q.hide === h.id));
-      const h = free.sort((a, b) => Math.hypot(a.enter.x - me.x, a.enter.z - me.z) - Math.hypot(b.enter.x - me.x, b.enter.z - me.z))[0];
-      if (!h) return;
-      walkTo(grid, me, h.enter.x, h.enter.z, 3.6, dt);
-      m.handle(id, { t: 'st', x: me.x, z: me.z, ry: me.ry, rx: 0, mv: 2, fl: 0, br: 1 });
-      if (Math.hypot(h.enter.x - me.x, h.enter.z - me.z) < 1.2) m.handle(id, { t: 'hide', s: h.id });
-      return;
-    }
-    if (p.hide >= 0) { m.handle(id, { t: 'unhide' }); return; }
-    me.x = p.x; me.z = p.z;
-    const ev = m.event;
-    const a = ev && m.actors.get(ev.actor);
-    const atDoor = a && a.at >= a.path.length && !a.leaving;
-    const goal = ev ? DOOR.use : SPOTS[0];
-    walkTo(grid, me, goal.x, goal.z, 2.2, dt);
-    m.handle(id, { t: 'st', x: me.x, z: me.z, ry: me.ry, rx: 0, mv: 1, fl: 0, br: 0 });
-    me.busy -= dt;
-    if (me.busy > 0) return;
-    const d = m.door;
-    const near = Math.hypot(DOOR.use.x - me.x, DOOR.use.z - me.z) < 1.5;
-    if (!near) return;
-    // between visitors: shut, bolt, chain
-    if (!ev || !atDoor) {
-      if (d.angle > 0.03) act('close');
-      else if (!d.bolt) act('bolt');
-      else if (!d.chain) act('chain');
-      me.busy = 0.5;
-      return;
-    }
-    if (habit === 'ignore') return;
-    if (ev.t < 6 + me.rng() * 10) return;
-    m.handle(id, { t: 'talk', k: me.rng.int(0, 1) });
-    me.busy = 1;
-    const wide = habit === 'wide' || (habit === 'smart' && ev.kind === 'visitor' && !ev.possessed);
-    if (d.bolt) { act('bolt'); return; }
-    if (wide && d.chain && d.angle < 0.03) { act('chain'); return; }
-    if (d.angle < 0.03) { act('open'); me.busy = 3; return; }
-    act('close');
-    me.busy = 1;
-  };
-}
-
-const habits = process.argv[2] ? [process.argv[2]] : ['ignore', 'chain', 'wide', 'smart', 'smart', 'chain'];
 let failures = 0;
-const tally = {};
+const check = (ok, what) => { if (!ok) { failures++; console.log('  FAIL:', what); } };
 
-habits.forEach((habit, n) => {
-  const seed = `night-${n}-${habit}`;
-  const roster = ['You', 'Maya', 'Leo', 'Nina'].map((name, i) => ({ id: `p${i}`, name, bot: i > 0, color: i }));
-  const events = [];
-  let crashed = null;
-  const m = new Match({ seed, roster, send: (to, msg) => { if (msg.t !== 's') events.push({ at: m.nightT, ...msg }); } });
-  const human = fakeHuman(m, 'p0', habit, seed);
-  const LIMIT = INTRO_LEN + NIGHT_LEN + 60;
-  try {
-    while (!m.over && m.t < LIMIT) {
-      human(TICK);
-      m.step(TICK);
-      if (m.ticks % 3 === 0) JSON.stringify(m.snapshot());
-    }
-  } catch (e) { crashed = e; }
-  const count = (pred) => events.filter(pred).length;
-  const over = events.find((e) => e.t === 'over');
-  const line = {
-    knocks: count((e) => e.t === 'fx' && (e.k === 'knock' || e.k === 'bang')),
-    opened: events.filter((e) => e.t === 'opened').map((e) => e.outcome).join(','),
-    breaches: events.filter((e) => e.t === 'breach').map((e) => e.reason).join(','),
-    taken: count((e) => e.t === 'taken'),
-    lines: count((e) => e.t === 'say'),
-  };
-  console.log(`${habit.padEnd(6)} | over ${over ? Math.round(over.at) + 's' : '-'}${over?.dawn ? ' (dawn)' : ''} | knocks ${line.knocks} | opened [${line.opened}] | breaches [${line.breaches}] | taken ${line.taken} | ${over ? over.results.map((r) => `${r.name}:${r.st}`).join(' ') : ''}`);
-  for (const o of line.opened.split(',').filter(Boolean)) tally[o] = (tally[o] || 0) + 1;
-  for (const b of line.breaches.split(',').filter(Boolean)) tally[`breach:${b}`] = (tally[`breach:${b}`] || 0) + 1;
-  try {
-    assert.equal(crashed, null, `the simulation crashed: ${crashed && crashed.stack}`);
-    assert.ok(events.some((e) => e.t === 'go'), 'the night started after the cutscene');
-    assert.ok(over, 'the night finished');
-    assert.ok(line.knocks > 0, 'someone knocked');
-    if (habit === 'ignore') assert.ok(line.breaches.length > 0, 'ignoring him gets you a visit');
-    if (over.dawn) assert.ok(m.nightT >= NIGHT_LEN - 0.1, 'dawn comes at 6 AM');
-    else assert.ok(!m.players.some((p) => !p.bot && p.st === 'in'), 'it only ends early when nobody is left');
-    if (over.dawn) assert.ok(!m.hunt || m.hunt.state === 'leave', 'he is not still hunting at dawn');
-  } catch (e) {
-    failures++;
-    console.error(`  FAIL (${habit}): ${e.message}`);
+function run(n, seed, plan) {
+  const rng = makeRng(seed);
+  const log = [];
+  const roster = Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: ['Ana', 'Ben', 'Cal', 'Dee'][i], color: i }));
+  const m = new Match({ seed, roster, send: (to, msg) => log.push({ to, msg }) });
+  const P = (i) => m.players[i];
+  const st = (i, x, y, z, extra = {}) => m.handle(P(i).id, { t: 'st', x, y, z, ry: 0, rx: 0, mv: 0, ...extra });
+  const at = (i, spot, dy = -1.4) => { const s = SPOTS[spot]; st(i, s.x, Math.max(terrainH(s.x, s.z), s.y + dy), s.z); };
+  const use = (i, k) => m.handle(P(i).id, { t: 'use', k });
+  const step = (sec) => { for (let k = 0; k < sec / TICK; k++) { m.step(TICK); if (m.over) break; } };
+  const objDone = (id) => m.isDone(id);
+  const answer = (k) => { if (m.ask) m.handle(P(0).id, { t: 'answer', id: m.ask.id, k }); };
+  const intoCab = (i) => st(i, -1.0, CAB_Y, 1.0);
+  const waitSeg = (id, max = 900) => { for (let k = 0; k < max && m.segId !== id && !m.over; k++) step(1); };
+  const pumpAsks = (choose) => { if (m.ask) answer(choose(m.ask)); };
+
+  step(INTRO_LEN + 0.5);
+  check(m.segId === 'day1', `${seed}: day one starts after the intro (got ${m.segId})`);
+  step(SEGMENTS[1].from ? 30 : 0);
+
+  // ---------------- day one: supplies, generator, radio, the water visit
+  const supplies = [...m.items.values()].filter((it) => it.kind === 'box' || it.kind === 'jug');
+  supplies.forEach((it, k) => {
+    const i = k % n;
+    st(i, it.x, 0, it.z + 0.5);
+    m.handle(P(i).id, { t: 'take', id: it.id });
+    check(P(i).carry === it.id, `${seed}: picked up ${it.kind}`);
+    intoCab(i);
+    m.handle(P(i).id, { t: 'drop' });
+    step(0.3);
+  });
+  check(m.delivered() === 4, `${seed}: four supplies delivered (got ${m.delivered()})`);
+  at(0, 'generator', -1.0);
+  for (let k = 0; k < 6 && !m.gen.on; k++) { use(0, 'generator'); step(0.5); }
+  check(m.gen.on, `${seed}: generator starts`);
+  intoCab(0);
+  at(0, 'radio');
+  m.handle(P(0).id, { t: 'radio', k: 'checkin' });
+  step(25);
+  check(objDone('checkin'), `${seed}: checked in`);
+  // wait for Wade, answer him
+  for (let k = 0; k < 160 && !m.flags.w1Done; k++) { pumpAsks((a) => (a.opts.length === 2 ? plan.water : rng.int(0, 2))); step(1); }
+  check(m.flags.w1Done, `${seed}: water visit finished (${m.flags.water})`);
+  check(!!m.objective('sleep'), `${seed}: told to sleep`);
+  for (let i = 0; i < n; i++) { intoCab(i); use(i, `bed${i}`); }
+  waitSeg('night1', 200);
+  check(m.segId === 'night1', `${seed}: night one`);
+
+  // ---------------- night one: the knocking
+  step(m.hold - m.t + 0.1);
+  for (let k = 0; k < 60 && !m.flags.knockedAt; k++) step(1);
+  check(!!m.flags.knockedAt, `${seed}: he knocked on the trapdoor`);
+  if (plan.openHatch) {
+    m.handle(P(0).id, { t: 'use', k: 'bed0' });
+    at(0, 'hatch', -1.0);
+    use(0, 'hatch');
   }
-});
-console.log('outcomes seen:', JSON.stringify(tally));
+  for (let k = 0; k < 60 && !m.flags.fled; k++) step(1);
+  check(m.flags.fled, `${seed}: he went away`);
+  step(3);
+  if (P(0).bed >= 0) use(0, `bed${P(0).bed}`);
+  if (m.hatch.target) { at(0, 'hatch', -1.0); use(0, 'hatch'); step(1.5); }
+  at(0, 'hatchBolt', -1.0);
+  use(0, 'hatchBolt');
+  check(m.hatch.bolt, `${seed}: trapdoor bolted`);
+  for (let i = 0; i < n; i++) { if (P(i).bed < 0) { intoCab(i); use(i, `bed${i}`); } }
+  waitSeg('day2', 200);
+  check(m.segId === 'day2', `${seed}: day two (got ${m.segId})`);
+  check(m.tank === (m.flags.water !== 'refused' && m.flags.water !== 'took'), `${seed}: tank ${m.tank ? 'full' : 'emptied'} after "${m.flags.water}"`);
 
-// layout sanity: every hiding spot and room can be reached from the door
-{
-  for (const h of HIDES) assert.ok(grid.path(DOOR.use.x, DOOR.use.z, h.enter.x, h.enter.z), `can walk to ${h.name}`);
-  for (const r of ROOMS) assert.ok(grid.path(DOOR.use.x, DOOR.use.z, r.x, r.z), `can walk to the ${r.id}`);
+  // ---------------- day two: smoke, bearing, report, camera, water, Wade
+  step(m.hold - m.t + 0.1);
+  check(m.smoke != null, `${seed}: there's smoke`);
+  const binocs = [...m.items.values()].find((it) => it.kind === 'binocs');
+  st(0, binocs.x, CAB_Y, binocs.z + 0.6);
+  m.handle(P(0).id, { t: 'take', id: binocs.id });
+  st(0, 3.0, CAB_Y, 0, { zm: 1 });
+  m.handle(P(0).id, { t: 'spot' });
+  check(objDone('spot'), `${seed}: smoke spotted`);
+  m.handle(P(0).id, { t: 'drop' });
+  m.handle(P(0).id, { t: 'mark', b: m.smoke + (plan.badBearing ? 25 : 2) });
+  at(0, 'radio');
+  step(12);
+  m.handle(P(0).id, { t: 'radio', k: 'smoke' });
+  step(12);
+  if (plan.badBearing) {
+    check(!objDone('report'), `${seed}: a wrong bearing isn't accepted`);
+    m.handle(P(0).id, { t: 'mark', b: m.smoke - 1 });
+    m.handle(P(0).id, { t: 'radio', k: 'smoke' });
+    step(12);
+  }
+  check(objDone('report'), `${seed}: bearing reported`);
+  at(n > 1 ? 1 : 0, 'trailcam', -1.5);
+  use(n > 1 ? 1 : 0, 'trailcam');
+  check(objDone('camera'), `${seed}: camera photos seen`);
+  // water: from the tank, or the spring if he emptied it
+  const jug = [...m.items.values()].find((it) => it.kind === 'jug');
+  st(0, jug.x, jug.y - 0.1, jug.z + 0.4);
+  m.handle(P(0).id, { t: 'take', id: jug.id });
+  at(0, m.tank ? 'tank' : 'spring', -1.2);
+  use(0, m.tank ? 'tank' : 'spring');
+  check(objDone('water') && jug.state === 1, `${seed}: jug refilled`);
+  intoCab(0);
+  m.handle(P(0).id, { t: 'drop' });
+  for (let i = 0; i < n; i++) intoCab(i);
+  // Wade walks up the road and asks to come up
+  for (let k = 0; k < 200 && !m.flags.w2Done; k++) {
+    if (m.ask) {
+      answer(plan.relief);
+      if (plan.relief === 1) { step(3); at(0, 'radio'); m.handle(P(0).id, { t: 'radio', k: 'verify' }); }
+      if (plan.relief === 0) { at(0, 'hatchBolt', -1.0); use(0, 'hatchBolt'); }
+    }
+    step(1);
+  }
+  check(m.flags.w2Done, `${seed}: relief visit finished`);
+  check(!!m.flags.letIn === (plan.relief === 0), `${seed}: let him in only when asked to`);
+  if (plan.relief === 0) check(m.flags.keysStolen, `${seed}: he took the keys`);
+  waitSeg('evening2', 200);
+  check(m.segId === 'evening2', `${seed}: the evening (got ${m.segId})`);
+
+  // ---------------- the evening: fuel and lock up
+  step(m.hold - m.t + 0.1);
+  const fuel = [...m.items.values()].find((it) => it.kind === 'fuel');
+  st(0, fuel.x, 0, fuel.z + 0.6);
+  m.handle(P(0).id, { t: 'take', id: fuel.id });
+  at(0, 'generator', -1);
+  use(0, 'generator');
+  check(objDone('fuel'), `${seed}: refuelled`);
+  m.handle(P(0).id, { t: 'drop' });
+  for (let i = 0; i < n; i++) intoCab(i);
+  if (m.hatch.open > 0.05) { at(0, 'hatch', -1.0); use(0, 'hatch'); step(1.5); }
+  if (!m.hatch.bolt) { at(0, 'hatchBolt', -1.0); use(0, 'hatchBolt'); }
+  for (let i = 0; i < n; i++) intoCab(i);
+  at(0, 'doorBolt', -1.2);
+  if (plan.boltDoor) use(0, 'doorBolt');
+  waitSeg('night2', 200);
+  check(m.segId === 'night2', `${seed}: the second night (got ${m.segId})`);
+
+  // ---------------- the second night: stay up top, answer the fake call
+  step(m.hold - m.t + 0.1);
+  let taken = 0;
+  for (let k = 0; k < 420 && m.segId === 'night2' && !m.over; k++) {
+    if (m.ask) { at(0, 'radio'); answer(0); }
+    // keep everyone in the cab (the scripted night happens around them)
+    for (let i = 0; i < n; i++) if (P(i).st === 'in') st(i, -1.2 + i * 0.3, CAB_Y, 0.9);
+    step(1);
+  }
+  taken = m.players.filter((p) => p.st === 'taken').length;
+  check(m.flags.fakeExposed, `${seed}: asked the fake dispatcher for the word`);
+  check(m.cut, `${seed}: the antenna's cut by morning`);
+  if (plan.boltDoor) check(taken === 0, `${seed}: nobody taken with everything bolted (${taken})`);
+  if (m.over) return { m, ending: lastOver(log) };
+  check(m.segId === 'day3', `${seed}: day three (got ${m.segId})`);
+
+  // ---------------- day three: the truck, or the phone
+  step(m.hold - m.t + 0.1);
+  const alive = () => m.players.map((p, i) => ({ p, i })).filter((x) => x.p.st === 'in');
+  if (plan.out === 'phone') {
+    const { i } = alive()[0];
+    st(i, 3.1, CAB_Y, -3.1);
+    m.handle(P(i).id, { t: 'phone', k: 'text' });
+    for (let k = 0; k < 200 && !m.over; k++) {
+      for (const x of alive()) st(x.i, (HATCH.x0 + HATCH.x1) / 2, CAB_Y, (HATCH.z0 + HATCH.z1) / 2);
+      step(1);
+    }
+  } else {
+    // the keys: from the hook, or from his camp
+    const keys = [...m.items.values()].find((it) => it.kind === 'keys');
+    const { i } = alive()[0];
+    if (!keys.hidden) {
+      st(i, keys.x, keys.y - 1.2, keys.z + 0.4);
+      m.handle(P(i).id, { t: 'take', id: keys.id });
+    }
+    check(P(i).carry === keys.id, `${seed}: got the keys (${m.flags.keysAtCamp ? 'at his camp' : 'off the hook'})`);
+    for (const x of alive()) { at(x.i, 'truckDoor', -1.2); use(x.i, 'truckDoor'); }
+    step(20);
+  }
+  return { m, ending: lastOver(log) };
 }
 
-if (failures) { console.error(`${failures} night(s) failed`); process.exit(1); }
+function lastOver(log) {
+  for (let i = log.length - 1; i >= 0; i--) if (log[i].msg.t === 'over') return log[i].msg;
+  return null;
+}
+
+const plans = [
+  { n: 1, water: 0, relief: 2, openHatch: true, badBearing: false, boltDoor: true, out: 'truck' },
+  { n: 2, water: 1, relief: 1, openHatch: false, badBearing: true, boltDoor: true, out: 'phone' },
+  { n: 3, water: 0, relief: 0, openHatch: true, badBearing: false, boltDoor: true, out: 'truck' },
+  { n: 4, water: -1, relief: 2, openHatch: false, badBearing: false, boltDoor: false, out: 'phone' },
+  { n: 2, water: 1, relief: 0, openHatch: true, badBearing: false, boltDoor: true, out: 'phone' },
+];
+plans.forEach((plan, k) => {
+  const seed = `test${k}`;
+  let r;
+  try { r = run(plan.n, seed, plan); } catch (e) { failures++; console.log(`  FAIL: ${seed} threw`, e); return; }
+  const e = r.ending;
+  check(!!e, `${seed}: reached an ending`);
+  const states = r.m.players.map((p) => `${p.name}:${p.st}`).join(' ');
+  console.log(`${seed} | ${plan.n} player(s) | water:${r.m.flags.water} relief:${['up', 'check', 'no'][plan.relief]} out:${plan.out} | ending: ${e ? e.ending : 'none'} | ${states}`);
+});
+
+if (failures) { console.log(`${failures} failure(s)`); process.exit(1); }
 console.log('all good');

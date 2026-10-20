@@ -9,6 +9,7 @@ export class Input {
     this.my = 0;
     this.clicks = 0;
     this.rightClicks = 0;
+    this.buttons = new Set();  // mouse buttons held
     this.fakeLock = new URLSearchParams(location.search).has('autotest');
     const on = (t, ev, fn, opts) => { t.addEventListener(ev, fn, opts); this.off.push(() => t.removeEventListener(ev, fn, opts)); };
     this.off = [];
@@ -16,10 +17,10 @@ export class Input {
       if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
       if (!this.keys.has(e.code)) this.hits.add(e.code);
       this.keys.add(e.code);
-      if (this.locked && ['Space', 'Tab', 'KeyF', 'KeyQ', 'KeyE', 'KeyC', 'ControlLeft'].includes(e.code)) e.preventDefault();
+      if (this.locked && ['Space', 'Tab', 'KeyF', 'KeyQ', 'KeyE', 'KeyC', 'KeyG', 'KeyP', 'ControlLeft'].includes(e.code)) e.preventDefault();
     });
     on(window, 'keyup', (e) => this.keys.delete(e.code));
-    on(window, 'blur', () => this.keys.clear());
+    on(window, 'blur', () => { this.keys.clear(); this.buttons.clear(); });
     on(document, 'mousemove', (e) => {
       if (!this.locked) return;
       this.mx += e.movementX || 0;
@@ -27,9 +28,11 @@ export class Input {
     });
     on(document, 'mousedown', (e) => {
       if (!this.locked) return;
+      this.buttons.add(e.button);
       if (e.button === 0) this.clicks++;
       if (e.button === 2) this.rightClicks++;
     });
+    on(document, 'mouseup', (e) => this.buttons.delete(e.button));
     on(document, 'contextmenu', (e) => { if (this.locked) e.preventDefault(); });
   }
 
@@ -47,6 +50,8 @@ export class Input {
   }
 
   down(code) { return this.locked && this.keys.has(code); }
+  // the right mouse button (or Z) held: raise the binoculars
+  get aiming() { return this.locked && (this.buttons.has(2) || this.keys.has('KeyZ')); }
   hit(code) { return this.locked && this.hits.has(code); }
 
   // call once per frame after reading input

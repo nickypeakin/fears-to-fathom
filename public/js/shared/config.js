@@ -1,48 +1,39 @@
 // Tuning numbers shared by the host simulation and every client.
 
 export const MAX_PLAYERS = 4;
-export const PEER_PREFIX = 'gsgs-floor50-';
+export const PEER_PREFIX = 'gsgs-cinder-';
 // bump whenever host and guest messages change: mismatched copies refuse to mix
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
 // people
 export const PLAYER_R = 0.24;
 export const EYE = 1.6;
-export const WALK = 2.2;
-export const SPRINT = 3.8;
-export const STAMINA_MAX = 4;       // seconds of sprinting
-export const STAMINA_REGEN = 0.7;   // seconds of stamina regained per second
-export const BREATH_MAX = 7;        // seconds you can hold your breath while hiding
+export const WALK = 2.3;
+export const SPRINT = 4.1;
+export const CARRY_SPEED = 0.75;    // walking pace while carrying something heavy
+export const STAMINA_MAX = 5;       // seconds of sprinting
+export const STAMINA_REGEN = 0.75;  // seconds of stamina regained per second
+export const STEP_UP = 0.55;        // highest step you can walk up
+export const GRAVITY = 16;
+export const REACH = 2.2;           // how far away you can use things
 
-// the night runs from 8 PM to 6 AM: NIGHT_LEN seconds of play
-export const NIGHT_LEN = 600;
-export const NIGHT_START_HOUR = 20;
-export const NIGHT_HOURS = 10;
+// how far from the tower anyone may wander before the forest turns them back
+export const BOUNDS_R = 132;
 
-// the opening: street, lobby, elevator, the walk to the door, the lock
-export const INTRO_LEN = 56;
+// the opening: the drive up the mountain and the ranger handing over the keys
+export const INTRO_LEN = 52;
 
-// him, at the door
-export const KNOCKING = {
-  stages: [14, 28, 42],  // seconds of being ignored before he knocks harder, bangs, then forces the lock
-  force: 4,              // lock damage per second while he forces it (the lock starts at 100)
-  unlockedRattle: 3,     // seconds after he finds the deadbolt open before the door gives
-  chainHold: 3.2,        // seconds the chain holds against someone pushing
-};
-
-// him, inside
-export const STALKER = {
+// him
+export const WADE = {
   radius: 0.3,
-  prowl: 1.35,
-  chase: 3.3,
-  catchDist: 0.72,
-  seeDark: 5,            // how far he can see you in the dark
-  seeLit: 13,            // ... with your flashlight on
-  fov: 0.55,             // cos of half his field of view
-  hearBreath: 2.6,       // he hears breathing from a hiding spot this close
-  giveUp: 3.5,           // seconds without seeing you before he stops chasing
-  hunt: 48,              // seconds he spends inside before he leaves
-  rise: 6,               // seconds after he gets in before he starts looking
+  walk: 1.45,
+  chase: 3.3,           // slower than a sprint, faster than a walk
+  catchDist: 0.85,
+  seeDark: 10,          // how far he spots you in the dark
+  seeLit: 30,           // ... with your flashlight on
+  seeDay: 45,
+  fov: 0.45,            // cos of half his field of view
+  giveUp: 5,            // seconds without seeing you before he stops chasing
 };
 
 // simulation
