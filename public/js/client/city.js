@@ -55,7 +55,7 @@ const skyFrag = /* glsl */`
   }
   float fbm(vec2 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+    for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
     return v;
   }
 
@@ -276,6 +276,113 @@ const pointsFrag = /* glsl */`
   }
 `;
 
+// sky colour keys from day (sun at +8 degrees) down to full night (-18):
+// elevation, zenith, horizon away from the sun, horizon under it, glow, glow strength
+const SKY_KEYS = [
+  [8, 0x4f7fc0, 0xb8c8dc, 0xffe2b8, 0xfff0d0, 0.8],
+  [2, 0x34589a, 0xc89aa2, 0xffaa66, 0xffc890, 0.9],
+  [-2, 0x223a78, 0x9a7090, 0xf08850, 0xffa070, 0.7],
+  [-6, 0x121c48, 0x4e4268, 0xa8584c, 0xd07050, 0.35],
+  [-11, 0x070b22, 0x201c38, 0x3c2636, 0x6a3a38, 0.1],
+  [-18, 0x03050c, 0x0b0b15, 0x0d0b15, 0x201010, 0.0],
+].map((k) => [k[0], ...k.slice(1, 5).map((c) => new THREE.Color(c)), k[5]]);
+const AMBIENT_FLOOR = new THREE.Color(0.012, 0.012, 0.016);
+
+// The skyline is drawn into a cube map around the camera, which is then
+// laid behind the near scene as its background. Turning your head only
+// changes which part of the cube you see, so the cube can be repainted a
+// face at a time, every few frames, with the faces in view first. Each
+// face is painted from wherever the camera is at that moment, so walking
+// across the room keeps the near towers in the right place.
+const _v = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _axes = Array.from({ length: 6 }, () => new THREE.Vector3());
+
+// one cube serves whichever skyline is on screen (the street's or ours)
+const cube = { size: 768, every: 2, target: null, cam: null, owner: null };
+
+export class Backdrop {
+  // size: pixels along each face; every: repaint one face every this many frames
+  static configure({ size, every }) {
+    cube.size = size;
+    cube.every = every;
+  }
+
+  constructor(scene) {
+    this.scene = scene;
+    this.age = new Float32Array(6).fill(Infinity);
+    this.from = Array.from({ length: 6 }, () => new THREE.Vector3(1e9, 0, 0));
+    this.frame = 0;
+  }
+
+  // repaint everything on the next frame (a camera cut, a jump in time)
+  invalidate() { this.age.fill(Infinity); }
+
+  face(renderer, i) {
+    renderer.setRenderTarget(cube.target, i);
+    renderer.render(this.scene, cube.cam.children[i]);
+    this.age[i] = 0;
+    this.from[i].copy(cube.cam.position);
+  }
+
+  // which faces the camera can see: sample directions across its view and
+  // note which face each one lands on
+  seen(camera) {
+    const tv = Math.tan((camera.fov * Math.PI) / 360), th = tv * camera.aspect;
+    camera.getWorldQuaternion(_q);
+    cube.cam.children.forEach((c, i) => c.getWorldDirection(_axes[i]));
+    let mask = 0;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      _d.set(a * th, b * tv, -1).applyQuaternion(_q);
+      let f = 0;
+      for (let i = 1; i < 6; i++) if (_d.dot(_axes[i]) > _d.dot(_axes[f])) f = i;
+      mask |= 1 << f;
+    }
+    return mask;
+  }
+
+  // brings the cube up to date for `camera` and returns it as a texture
+  render(renderer, camera) {
+    if (!cube.target) {
+      cube.target = new THREE.WebGLCubeRenderTarget(cube.size, { type: THREE.HalfFloatType, generateMipmaps: false });
+      cube.cam = new THREE.CubeCamera(4, 9000, cube.target);
+    }
+    if (cube.target.width !== cube.size) cube.target.setSize(cube.size, cube.size);
+    if (cube.owner !== this || cube.target.width !== this.painted) {
+      cube.owner = this;
+      this.painted = cube.target.width;
+      this.invalidate();
+    }
+    const cc = cube.cam;
+    if (cc.coordinateSystem !== renderer.coordinateSystem) {
+      cc.coordinateSystem = renderer.coordinateSystem;
+      cc.updateCoordinateSystem();
+    }
+    camera.getWorldPosition(_v);
+    cc.position.copy(_v);
+    cc.updateMatrixWorld(true);
+    const keep = renderer.getRenderTarget();
+    for (let i = 0; i < 6; i++) {
+      // a face painted from far away (a cut to another part of the floor) is wrong
+      if (this.from[i].distanceToSquared(_v) > 9) this.age[i] = Infinity;
+      if (this.age[i] === Infinity) this.face(renderer, i);
+    }
+    if (++this.frame % cube.every === 0) {
+      const seen = this.seen(camera);
+      let best = 0, score = -1;
+      for (let i = 0; i < 6; i++) {
+        // stale faces first, faces in view far more urgently, and faces
+        // painted from somewhere else in the room before those
+        const s = (this.age[i] + 30 * this.from[i].distanceTo(_v)) * (seen & (1 << i) ? 6 : 1);
+        if (s > score) { score = s; best = i; }
+      }
+      this.face(renderer, best);
+    }
+    for (let i = 0; i < 6; i++) this.age[i]++;
+    renderer.setRenderTarget(keep);
+    return cube.target.texture;
+  }
+}
+
 export const BLOCK = 92, STREET = 9;
 const RIVER_Z = 520, RIVER_W = 150;
 const DOWNTOWN = { x: -1100, z: 260 };
@@ -299,7 +406,7 @@ export class City {
       uniforms: this.skyU, vertexShader: skyVert, fragmentShader: skyFrag, side: THREE.BackSide, depthWrite: false,
     }));
     sky.frustumCulled = false;
-    sky.renderOrder = -10;
+    sky.renderOrder = 10;     // after the towers, so only the open sky is shaded
     group.add(sky);
 
     // ---------------------------------------------------------- towers
@@ -343,6 +450,8 @@ export class City {
     for (const [x, z, w, d, h] of [[-75, 30, 40, 50, 62], [-80, -60, 36, 36, 95], [60, 95, 50, 40, 48], [-40, 110, 34, 30, 120], [110, -40, 40, 50, 80]]) {
       if (!tower) add(x, z, w, d, h, rng());
     }
+    // nearest first: towers behind them then fail the depth test cheaply
+    boxes.sort((a, b) => a.x * a.x + a.z * a.z - b.x * b.x - b.z * b.z);
     this.boxes = boxes;
 
     this.bldMat = new THREE.ShaderMaterial({ uniforms: shared, vertexShader: bldVert, fragmentShader: bldFrag });
@@ -434,25 +543,14 @@ export class City {
     const u = this.skyU, b = this.u;
     u.sunDir.value.copy(S.sun);
     const k = (a, c) => Math.max(0, Math.min(1, (e - a) / (c - a)));
-    // colour keys from day (sun at +8 degrees) down to full night (-18)
-    const keys = [
-      // elevation, zenith, horizon away from the sun, horizon under it, glow, glow strength
-      [8, 0x4f7fc0, 0xb8c8dc, 0xffe2b8, 0xfff0d0, 0.8],
-      [2, 0x34589a, 0xc89aa2, 0xffaa66, 0xffc890, 0.9],
-      [-2, 0x223a78, 0x9a7090, 0xf08850, 0xffa070, 0.7],
-      [-6, 0x121c48, 0x4e4268, 0xa8584c, 0xd07050, 0.35],
-      [-11, 0x070b22, 0x201c38, 0x3c2636, 0x6a3a38, 0.1],
-      [-18, 0x03050c, 0x0b0b15, 0x0d0b15, 0x201010, 0.0],
-    ];
     let i = 0;
-    while (i < keys.length - 2 && e < keys[i + 1][0]) i++;
-    const a = keys[i], c = keys[i + 1];
+    while (i < SKY_KEYS.length - 2 && e < SKY_KEYS[i + 1][0]) i++;
+    const a = SKY_KEYS[i], c = SKY_KEYS[i + 1];
     const t = Math.max(0, Math.min(1, (a[0] - e) / (a[0] - c[0])));
-    const mix = (j) => new THREE.Color(a[j]).lerp(new THREE.Color(c[j]), t);
-    u.zenith.value.copy(mix(1));
-    u.horizon.value.copy(mix(2));
-    u.sunHorizon.value.copy(mix(3));
-    u.glowColor.value.copy(mix(4));
+    u.zenith.value.lerpColors(a[1], c[1], t);
+    u.horizon.value.lerpColors(a[2], c[2], t);
+    u.sunHorizon.value.lerpColors(a[3], c[3], t);
+    u.glowColor.value.lerpColors(a[4], c[4], t);
     u.sunGlow.value = a[5] + (c[5] - a[5]) * t;
     u.sunDisc.value = k(-1.5, 0.5);
     u.stars.value = 1 - k(-14, -7);
@@ -460,7 +558,7 @@ export class City {
     u.cityGlow.value = 0.25 + night * 0.85;
     // towers: lit by the low sun, then only by their windows
     b.sunColor.value.copy(u.glowColor.value).multiplyScalar(1.6 * k(-2, 4));
-    b.ambient.value.copy(u.zenith.value).multiplyScalar(0.6).add(new THREE.Color(0.012, 0.012, 0.016));
+    b.ambient.value.copy(u.zenith.value).multiplyScalar(0.6).add(AMBIENT_FLOOR);
     b.hazeColor.value.copy(u.horizon.value).multiplyScalar(0.85);
     b.hazeSun.value.copy(u.sunHorizon.value).multiplyScalar(0.9);
     b.skyRefl.value.copy(u.horizon.value).lerp(u.zenith.value, 0.4);

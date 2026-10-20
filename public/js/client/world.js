@@ -2,16 +2,17 @@
 // opens onto it, with the city beyond the glass. Built once at start-up and
 // reused by the title screen and every night.
 //
-// Two scenes: `far` holds the sky and the skyline and is drawn first with a
-// distant near plane; `scene` holds everything on this floor and is drawn
-// over it. That keeps depth precise from 5 cm to 5 km.
+// Two scenes: `far` holds the sky and the skyline and is painted into a
+// cube map with a distant near plane (see Backdrop); `scene` holds
+// everything on this floor and is drawn with that cube behind it. That
+// keeps depth precise from 5 cm to 5 km.
 
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TX from './textures.js';
 import { furniture, pendant, ceilingLight, sconce, mat } from './props.js';
-import { City } from './city.js';
+import { City, Backdrop } from './city.js';
 import { FrontDoor } from './door.js';
 import { elevatorCar, liftDoors } from './elevator.js';
 import { WALLS, alongX, CEIL, HALL_CEIL, CORRIDOR, FURNITURE, HIDES, ELEVATOR, inside } from '../shared/layout.js';
@@ -110,6 +111,8 @@ export class Tower {
     this.far = new THREE.Scene();
     this.city = new City({ groundY: -150 });
     this.far.add(this.city.group);
+    this.backdrop = new Backdrop(this.far);
+    this.frame = 0;
 
     const pmrem = new THREE.PMREMGenerator(renderer);
     this.env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -359,7 +362,7 @@ export class Tower {
       case 'glass':
       case 'window': {
         const frame = mat(0x1e1f22, { rough: 0.35, metal: 0.6 });
-        const glass = new THREE.MeshPhysicalMaterial({ color: 0x9fb4c0, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.1, envMapIntensity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+        const glass = new THREE.MeshBasicMaterial({ color: 0x9fb4c0, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false });
         const hh = h.y1 - h.y0;
         const pane = new THREE.Mesh(new THREE.PlaneGeometry(len, hh), glass);
         pane.position.copy(at(mid, c, h.y0 + hh / 2));
@@ -424,7 +427,8 @@ export class Tower {
     // the sun, later the moon, through the west and south glass
     const sun = (this.sun = new THREE.DirectionalLight(0xffc890, 2.5));
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.autoUpdate = false;     // redrawn on a schedule in update()
     Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 80 });
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.03;
@@ -438,34 +442,29 @@ export class Tower {
       this.lights.push({ light: l, base: intensity, zone });
       return l;
     };
-    // apartment
+    // Every real light costs something on every pixel, so there are few of
+    // them; the other fittings just glow. The hall and kitchen are lit by
+    // their neighbours.
     s.add(placed(pendant(CEIL, 0.95), 2.6, 3.2));
-    point(2.6, 1.5, 3.2, 0xffd8a8, 7, 7, 'apt');
-    point(3.55, 1.45, 5.55, 0xffcf96, 5, 5.5, 'apt');      // floor lamp
-    point(3.9, 1.55, 0.5, 0xfff0d8, 2.5, 3.5, 'apt');     // under the kitchen cabinets
+    point(2.6, 1.5, 3.2, 0xffd8a8, 8.5, 8, 'apt');        // over the dining table
+    point(3.55, 1.45, 5.55, 0xffcf96, 5, 6, 'apt');        // floor lamp
     for (const [x, z] of [[5.6, 1.5], [8.2, 1.4], [7.4, 3.6], [6.9, 6.0]]) s.add(placed(ceilingLight(CEIL), x, z));
-    point(5.6, 2.3, 1.5, 0xfff2e2, 3.5, 3.6, 'apt');      // bathroom
-    point(8.2, 2.3, 1.4, 0xffe2c0, 3.5, 4.2, 'apt');      // second bedroom
-    point(7.4, 2.35, 3.6, 0xffe2c0, 2.2, 3.4, 'apt');     // hall
-    point(9.55, 1.0, 5.3, 0xffc888, 2.2, 4.5, 'apt');     // bedside lamp
+    point(5.6, 2.3, 1.5, 0xfff2e2, 3.5, 3.8, 'apt');      // bathroom
+    point(8.1, 2.3, 1.7, 0xffe2c0, 4.2, 5.2, 'apt');      // second bedroom, and the hall
+    point(9.3, 1.3, 5.5, 0xffc888, 3.8, 6.5, 'apt');      // bedside lamp, and the hall
     // corridor: sconces on the far wall and a light by the elevators
     for (const x of [0.7, 4.3, 12.5, 18.0]) {
       const sc = sconce();
       sc.position.set(x, 1.9, -2.4);
       s.add(sc);
     }
-    point(0.7, 1.95, -2.15, 0xffcf96, 2.6, 3.4, 'corr');
-    point(4.3, 1.95, -2.15, 0xffcf96, 2.6, 3.4, 'corr');
-    point(10.4, 2.4, -1.8, 0xffe8cc, 3.0, 4.0, 'corr');
+    point(2.5, 1.95, -2.15, 0xffcf96, 4.2, 4.2, 'corr');   // outside our door
+    point(10.4, 2.4, -1.8, 0xffe8cc, 3.4, 5.0, 'corr');   // by the elevators
     for (const x of [7.0, 10.4, 15.5, 20.5]) s.add(placed(ceilingLight(HALL_CEIL, 0.13), x, -1.3));
-    point(18.0, 1.95, -2.15, 0xffcf96, 2.2, 3.6, 'corr');
 
     // your phone's flashlight: always in the scene (adding lights later
     // would make every material recompile), dark until you switch it on
     const fl = (this.flash = new THREE.SpotLight(0xf4f0ff, 0, 14, 0.5, 0.45, 1.6));
-    fl.castShadow = true;
-    fl.shadow.mapSize.set(1024, 1024);
-    fl.shadow.bias = -0.0005;
     s.add(fl, fl.target);
   }
 
@@ -486,16 +485,18 @@ export class Tower {
 
   // --------------------------------------------------------- elevator ---
   buildElevator() {
-    const car = (this.car = elevatorCar());
+    const car = (this.car = elevatorCar({ light: false }));
     car.group.position.set((ELEVATOR.doorX0 + ELEVATOR.doorX1) / 2, 0, ELEVATOR.z1 + 0.04);
     this.scene.add(car.group);
     car.display.set(50);
     this.liftDoors.display.set(50);
-    this.carLight = { light: car.light, base: car.light.intensity };
   }
 
   // ------------------------------------------------------------- state --
   setHour(h) {
+    // the sky changes slowly: only recompute it once the clock has moved on
+    if (this.hour != null && Math.abs(h - this.hour) < 0.002) return this.city.state;
+    if (this.hour != null && Math.abs(h - this.hour) > 0.2) this.backdrop.invalidate();
     const S = this.city.setHour(h);
     const e = S.elev * 180 / Math.PI;
     const day = Math.max(0, Math.min(1, (e + 2) / 8));
@@ -511,7 +512,7 @@ export class Tower {
       sun.position.copy(this.city.skyU.moonDir.value).multiplyScalar(40).add(sun.target.position);
     }
     this.hemi.color.copy(this.city.skyU.zenith.value).lerp(new THREE.Color(0x404a60), 0.5);
-    this.hemi.intensity = 0.12 + 0.4 * day;
+    this.hemi.intensity = 0.2 + 0.35 * day;
     this.hour = h;
     return S;
   }
@@ -552,6 +553,11 @@ export class Tower {
     for (const l of this.lamps.apt) l.m.emissiveIntensity = l.base * (0.03 + 0.97 * this.power);
     for (const l of this.lamps.corr) l.m.emissiveIntensity = l.base * (0.03 + 0.97 * corr);
     this.scene.environmentIntensity = 0.06 + 0.2 * this.power;
+    // the sun's shadows only need redrawing now and then (people move
+    // slowly; at night the moon barely casts any), and never on the same
+    // frame as the skyline's repaint
+    this.frame++;
+    if (this.frame % (this.sun.intensity > 0.5 ? 2 : 30) === 1) this.sun.shadow.needsUpdate = true;
     if (flash) {
       this.flash.intensity = flash.on ? 9 : 0;
       this.flash.position.copy(flash.pos);
@@ -559,19 +565,10 @@ export class Tower {
     } else this.flash.intensity = 0;
   }
 
-  // draw the skyline, then this floor over it
+  // bring the skyline up to date, then draw this floor in front of it
   render(renderer, camera, target) {
-    const far = this.farCam || (this.farCam = new THREE.PerspectiveCamera());
-    far.copy(camera);
-    far.near = 4;
-    far.far = 9000;
-    far.updateProjectionMatrix();
+    this.scene.background = this.backdrop.render(renderer, camera);
     renderer.setRenderTarget(target);
-    renderer.autoClear = false;
-    renderer.clear(true, true, true);
-    renderer.render(this.far, far);
-    renderer.clearDepth();
     renderer.render(this.scene, camera);
-    renderer.autoClear = true;
   }
 }

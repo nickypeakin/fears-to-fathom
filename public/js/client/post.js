@@ -120,8 +120,10 @@ export class Post {
   constructor(renderer) {
     this.renderer = renderer;
     this.grainOn = true;
+    this.maxDpr = 1.25;     // high-density screens render at up to this many pixels per CSS pixel
+    this.bloomOn = true;
     const hdr = { type: THREE.HalfFloatType };
-    this.target = new THREE.WebGLRenderTarget(4, 4, { ...hdr, samples: 4 });
+    this.target = new THREE.WebGLRenderTarget(4, 4, { ...hdr, samples: 2 });
     this.a1 = new THREE.WebGLRenderTarget(4, 4, hdr);
     this.a2 = new THREE.WebGLRenderTarget(4, 4, hdr);
     this.b1 = new THREE.WebGLRenderTarget(4, 4, hdr);
@@ -144,10 +146,23 @@ export class Post {
     this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   }
 
-  // Full resolution (up to 1.5x on high-density screens) times `quality`,
+  // How hard the picture works: pixel density cap, anti-aliasing samples
+  // (0, 2 or 4) and bloom. Settings > Graphics picks these.
+  configure({ maxDpr, samples, bloom }) {
+    this.maxDpr = maxDpr;
+    this.bloomOn = bloom;
+    if (samples !== this.target.samples) {
+      const { width, height } = this.target;
+      this.target.dispose();
+      this.target = new THREE.WebGLRenderTarget(width, height, { type: THREE.HalfFloatType, samples });
+      this.u.tex.value = this.target.texture;
+    }
+  }
+
+  // Full resolution (capped on high-density screens) times `quality`,
   // which drops on computers that can't keep up.
   setSize(w, h, quality = 1) {
-    const scale = Math.min(window.devicePixelRatio || 1, 1.5) * quality;
+    const scale = Math.min(window.devicePixelRatio || 1, this.maxDpr) * quality;
     const rw = Math.max(2, Math.round(w * scale)), rh = Math.max(2, Math.round(h * scale));
     this.target.setSize(rw, rh);
     const q = (t, d) => t.setSize(Math.max(1, Math.round(rw / d)), Math.max(1, Math.round(rh / d)));
@@ -169,17 +184,19 @@ export class Post {
     const r = this.renderer;
     draw(this.target);
     // bloom: bright pass, then blur at a quarter and a twelfth of the size
-    this.bright.uniforms.tex.value = this.target.texture;
-    this.pass(this.bright, this.a1);
-    const blur = (src, dst, dx, dy) => {
-      this.blur.uniforms.tex.value = src.texture;
-      this.blur.uniforms.dir.value.set(dx / src.width, dy / src.height);
-      this.pass(this.blur, dst);
-    };
-    blur(this.a1, this.a2, 1, 0); blur(this.a2, this.a1, 0, 1);
-    blur(this.a1, this.b2, 1, 0); blur(this.b2, this.b1, 0, 1);
-    blur(this.b1, this.b2, 1.5, 0); blur(this.b2, this.b1, 0, 1.5);
+    if (this.bloomOn) {
+      this.bright.uniforms.tex.value = this.target.texture;
+      this.pass(this.bright, this.a1);
+      const blur = (src, dst, dx, dy) => {
+        this.blur.uniforms.tex.value = src.texture;
+        this.blur.uniforms.dir.value.set(dx / src.width, dy / src.height);
+        this.pass(this.blur, dst);
+      };
+      blur(this.a1, this.a2, 1, 0); blur(this.a2, this.a1, 0, 1);
+      blur(this.a1, this.b2, 1, 0); blur(this.b2, this.b1, 0, 1);
+    }
     const u = this.u;
+    u.bloom.value = this.bloomOn ? 0.8 : 0;
     u.time.value = fx.time || 0;
     u.exposure.value = fx.exposure ?? 1;
     u.bars.value = fx.bars || 0;

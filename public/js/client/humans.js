@@ -241,9 +241,9 @@ function mat(color, o = {}) {
     };
     if (o.map) params.map = o.map;
     if (o.bump) { params.bumpMap = o.bump; params.bumpScale = o.bumpScale ?? 1; }
-    let m;
-    if (o.sheen) m = new THREE.MeshPhysicalMaterial({ ...params, sheen: o.sheen, sheenRoughness: 0.6, sheenColor: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35) });
-    else m = new THREE.MeshStandardMaterial(params);
+    // plain standard materials throughout: cloth "sheen" looked nice but
+    // cost a second lighting pass on every pixel of everyone's clothes
+    const m = new THREE.MeshStandardMaterial(params);
     if (o.offset) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; }
     matCache.set(key, m);
   }
@@ -357,7 +357,7 @@ function eyeMat(iris, glint = false) {
     x.beginPath(); x.ellipse(64, 64, glint ? 6 : 9, glint ? 30 : 17, 0, 0, TAU); x.fill();
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
-    const m = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.05 });
+    const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.06 });
     if (glint) { m.emissive = new THREE.Color(0x401010); m.emissiveMap = t; m.emissiveIntensity = 1.2; }
     eyeMats.set(key, m);
   }
@@ -394,7 +394,9 @@ function joint(parent, x, y, z = 0) {
 function add(parent, geo, material, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, material);
   m.position.set(x, y, z);
-  m.castShadow = true;
+  // fingers, eyes and lids are far smaller than a shadow-map texel
+  if (!geo.boundingSphere) geo.computeBoundingSphere();
+  m.castShadow = geo.boundingSphere.radius > 0.035;
   m.receiveShadow = true;
   parent.add(m);
   return m;
@@ -824,7 +826,8 @@ function bake(group) {
     for (const o of list) group.remove(o);
     for (const g of geos) g.dispose();
     const m = new THREE.Mesh(merged, material);
-    m.castShadow = m.receiveShadow = true;
+    m.castShadow = list.some((o) => o.castShadow);
+    m.receiveShadow = true;
     m.userData.baked = true;
     group.add(m);
   }

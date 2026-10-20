@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as TX from './textures.js';
 import { mat, block, cyl, ball } from './props.js';
-import { City } from './city.js';
+import { City, Backdrop } from './city.js';
 import { elevatorCar, liftDoors } from './elevator.js';
 import { makePerson } from './humans.js';
 
@@ -22,6 +22,8 @@ export class Ground {
     this.far = new THREE.Scene();
     this.city = new City({ groundY: 0, exclude: 90, tower: true });
     this.far.add(this.city.group);
+    this.backdrop = new Backdrop(this.far);
+    this.frame = 0;
     const pmrem = new THREE.PMREMGenerator(renderer);
     this.env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
@@ -97,12 +99,11 @@ export class Ground {
     const name = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.45), new THREE.MeshBasicMaterial({ map: TX.sign('THE HALCYON', { w: 1024, h: 116, bg: '#161616', fg: '#e8d8b0', font: '600 76px Georgia, serif' }), toneMapped: false }));
     name.position.set(ENTRANCE.x, 3.7, LOBBY.z1 + 3.21);
     s.add(name);
-    for (const sgn of [-1, 1]) {
-      const l = new THREE.PointLight(0xffd8a0, 6, 7, 2);
-      l.position.set(ENTRANCE.x + sgn * 2.2, 3.4, LOBBY.z1 + 2.2);
-      s.add(l);
-      ball(s, mat(0xfff0d0, { emissive: 0xffd8a0, ei: 2 }), ENTRANCE.x + sgn * 2.2, 3.55, LOBBY.z1 + 2.2, 0.12, 0.04, 0.12).userData.lamp = true;
-    }
+    // one real light under the canopy; the fittings either side just glow
+    const canopy = new THREE.PointLight(0xffd8a0, 9, 9, 2);
+    canopy.position.set(ENTRANCE.x, 3.3, LOBBY.z1 + 2.0);
+    s.add(canopy);
+    for (const sgn of [-1, 1]) ball(s, mat(0xfff0d0, { emissive: 0xffd8a0, ei: 2 }), ENTRANCE.x + sgn * 2.2, 3.55, LOBBY.z1 + 2.2, 0.12, 0.04, 0.12).userData.lamp = true;
 
     // ---------------------------------------------------------- street furniture
     const pole = mat(0x1e1e20, { rough: 0.5, metal: 0.6 });
@@ -113,9 +114,11 @@ export class Ground {
       block(s, pole, x, 5.15, 12.25, 0.3, 0.12, 0.5, 0.04);
       const lamp = block(s, mat(0xfff0d0, { emissive: 0xffb060, ei: 2.5 }), x, 5.08, 12.25, 0.24, 0.02, 0.4, 0.01);
       lamp.userData.lamp = true;
-      const l = new THREE.PointLight(0xffb870, 14, 14, 2);
-      l.position.set(x, 4.9, 12.3);
-      s.add(l);
+      if (x === 4 || x === 22) {
+        const l = new THREE.PointLight(0xffb870, 14, 14, 2);
+        l.position.set(x, 4.9, 12.3);
+        s.add(l);
+      }
     }
     // planters with small trees
     for (const x of [6.5, 20.5]) {
@@ -211,7 +214,7 @@ export class Ground {
       shade.userData.lamp = true;
       shade.castShadow = false;
     }
-    for (const [x, z, i] of [[7, 3, 5], [13, 5, 7], [19, 4, 5]]) {
+    for (const [x, z, i] of [[8, 3, 8], [17, 5, 8]]) {
       const l = new THREE.PointLight(0xffe0b8, i, 12, 2);
       l.position.set(x, LOBBY.h - 1.3, z);
       s.add(l);
@@ -223,7 +226,8 @@ export class Ground {
     s.add(new THREE.HemisphereLight(0x7a88b8, 0x3a2a20, 0.6));
     const sun = (this.sun = new THREE.DirectionalLight(0xffb070, 1.6));
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.autoUpdate = false;
     Object.assign(sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 120 });
     sun.shadow.bias = -0.0005;
     sun.target.position.set(12, 0, 6);
@@ -232,6 +236,8 @@ export class Ground {
   }
 
   setHour(h) {
+    if (this.hour != null && Math.abs(h - this.hour) > 0.2) this.backdrop.invalidate();
+    this.hour = h;
     const S = this.city.setHour(h);
     this.sun.color.copy(this.city.skyU.glowColor.value);
     this.sun.position.copy(S.sun).multiplyScalar(60).add(this.sun.target.position);
@@ -245,21 +251,13 @@ export class Ground {
 
   update(t) {
     this.city.update(t);
+    if (this.frame++ % 2 === 1) this.sun.shadow.needsUpdate = true;   // between the skyline's repaints
   }
 
   render(renderer, camera, target) {
-    const far = this.farCam || (this.farCam = new THREE.PerspectiveCamera());
-    far.copy(camera);
-    far.near = 4;
-    far.far = 9000;
-    far.updateProjectionMatrix();
+    this.scene.background = this.backdrop.render(renderer, camera);
     renderer.setRenderTarget(target);
-    renderer.autoClear = false;
-    renderer.clear(true, true, true);
-    renderer.render(this.far, far);
-    renderer.clearDepth();
     renderer.render(this.scene, camera);
-    renderer.autoClear = true;
   }
 
   dispose() {

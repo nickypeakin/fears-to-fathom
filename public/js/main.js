@@ -7,8 +7,10 @@ import { Input } from './client/input.js';
 import { Hud, showScreen, screenShown, renderLobby, renderResults, setMsg } from './client/ui.js';
 import { HostLink, GuestLink, testConnection } from './client/net.js';
 import { Tower } from './client/world.js';
+import { Backdrop } from './client/city.js';
 import { Ground } from './client/ground.js';
 import { Game } from './client/game.js';
+import { makePerson, LOOKS } from './client/humans.js';
 import { Attract } from './client/attract.js';
 import { sound } from './client/audio.js';
 import { voice } from './client/voice.js';
@@ -24,7 +26,7 @@ try {
   throw new Error('WebGL unavailable');
 }
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.NoToneMapping;
 const post = new Post(renderer);
 const input = new Input(canvas);
@@ -39,7 +41,7 @@ const attract = new Attract(world);
 // ------------------------------------------------------------- settings --
 const params = new URLSearchParams(location.search);
 const SETTINGS_KEY = 'floor-50';
-const settings = { name: '', sens: 1, vol: 0.8, invert: false, voices: true, grain: true };
+const settings = { name: '', sens: 1, vol: 0.8, invert: false, voices: true, grain: true, graphics: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch { /* private mode */ }
 const save = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* private mode */ } };
 sound.volume = settings.vol;
@@ -59,6 +61,8 @@ $('vol').addEventListener('input', (e) => { settings.vol = +e.target.value; soun
 $('invert').addEventListener('change', (e) => { settings.invert = e.target.checked; save(); });
 $('voices').addEventListener('change', (e) => { settings.voices = e.target.checked; voice.enabled = settings.voices; if (!settings.voices) voice.stop(); save(); });
 $('grain').addEventListener('change', (e) => { settings.grain = e.target.checked; post.grainOn = settings.grain; save(); });
+$('graphics').value = settings.graphics;
+$('graphics').addEventListener('change', (e) => { settings.graphics = e.target.value; save(); applyGraphics(); });
 
 const invited = (params.get('join') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
 if (invited) $('code').value = invited;
@@ -71,22 +75,48 @@ let solo = false;
 let backTo = 'title';
 let paused = false;
 
-// Resolution adapts to the computer: if frames take too long the picture
-// renders at a lower resolution, and climbs back once there's headroom.
-// `?scale=0.5` fixes it (used by tests).
+// Graphics: 'auto' adapts the resolution to the computer, 'high' starts
+// sharp and keeps more detail, 'low' is for older laptops (smaller picture,
+// no shadows, no glow). `?scale=0.5` fixes the resolution (used by tests).
+const PRESETS = {
+  auto: { start: 0.85, min: 0.5, max: 1, maxDpr: 1.25, samples: 2, bloom: true, shadows: true, sky: { size: 768, every: 2 } },
+  high: { start: 1, min: 0.7, max: 1, maxDpr: 1.5, samples: 4, bloom: true, shadows: true, sky: { size: 1024, every: 1 } },
+  low: { start: 0.6, min: 0.45, max: 0.75, maxDpr: 1, samples: 0, bloom: false, shadows: false, sky: { size: 512, every: 3 } },
+};
 const fixedScale = Number(params.get('scale')) || 0;
-let quality = fixedScale || 1;
+let preset = PRESETS[settings.graphics] || PRESETS.auto;
+let quality = fixedScale || preset.start;
 let frameAvg = 1 / 60, judgeT = 0, calmT = 0;
+
+function applyGraphics() {
+  preset = PRESETS[settings.graphics] || PRESETS.auto;
+  quality = fixedScale || preset.start;
+  post.configure(preset);
+  Backdrop.configure(preset.sky);
+  if (renderer.shadowMap.enabled !== preset.shadows) {
+    renderer.shadowMap.enabled = preset.shadows;
+    // every material has to be rebuilt with (or without) shadows
+    for (const sc of [world.scene, ground && ground.scene]) sc?.traverse((o) => {
+      if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
+    });
+  }
+  frameAvg = 1 / 60;
+  calmT = 0;
+  resize();
+}
+
+// If frames take too long the picture renders at a lower resolution, and
+// climbs back once there's headroom.
 function adaptQuality(dt) {
   if (fixedScale) return;
-  frameAvg += (dt - frameAvg) * 0.05;
+  frameAvg += (dt - frameAvg) * 0.08;
   judgeT += dt;
   calmT += dt;
-  if (judgeT < 2) return;
+  if (judgeT < 1.2) return;
   judgeT = 0;
   let next = quality;
-  if (frameAvg > 1 / 35 && quality > 0.5) { next = Math.max(0.5, quality - 0.15); calmT = 0; }
-  else if (frameAvg < 1 / 57 && quality < 1 && calmT > 8) next = Math.min(1, quality + 0.1);
+  if (frameAvg > 1 / 48 && quality > preset.min) { next = Math.max(preset.min, quality - (frameAvg > 1 / 30 ? 0.2 : 0.1)); calmT = 0; }
+  else if (frameAvg < 1 / 58 && quality < preset.max && calmT > 6) { next = Math.min(preset.max, quality + 0.05); calmT = 0; }
   if (next !== quality) {
     quality = next;
     post.setSize(innerWidth, innerHeight, quality);
@@ -100,7 +130,33 @@ function resize() {
   if (game) game.resize(w, h);
 }
 addEventListener('resize', resize);
+post.configure(preset);
+Backdrop.configure(preset.sky);
+renderer.shadowMap.enabled = preset.shadows;
 resize();
+
+// Compile every shader the night will need now, while the title is up, so
+// the first visitor (or the lights going out) doesn't stall the game.
+function prewarm(scene, camera) {
+  const people = new THREE.Group();
+  Object.keys(LOOKS).forEach((k, i) => {
+    const p = makePerson(k);
+    p.position.set(i * 0.8, -60, 0);
+    if (k === 'neighbor') p.userData.rig.setPossessed(true);
+    people.add(p);
+  });
+  scene.add(people);
+  renderer.compile(scene, camera);
+  scene.remove(people);
+}
+prewarm(world.scene, attract.camera);
+// build the street for the opening while nobody's doing anything
+function buildGround() {
+  if (ground) return;
+  ground = new Ground(renderer);
+  prewarm(ground.scene, attract.camera);
+}
+setTimeout(() => (window.requestIdleCallback || ((f) => setTimeout(f, 1)))(buildGround), 2500);
 
 function playerName() {
   const n = $('name').value.trim() || 'Friend';
@@ -246,7 +302,7 @@ $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') actions.jo
 // ---------------------------------------------------------------- night --
 function startGame(m) {
   if (game) disposeGame();
-  if (!ground) ground = new Ground(renderer);
+  buildGround();
   hud.reset();
   game = new Game({ renderer, post, world, ground, link, start: m, hud, input, settings });
   game.resize(innerWidth, innerHeight);

@@ -102,7 +102,9 @@ clothes, hands), the skyline is thousands of instanced towers lit by a window
 shader, and every knock is synthesised. Spoken lines use the browser's own
 voices (Settings can turn them off; subtitles always show). The picture
 renders in HDR with bloom and drops resolution automatically on computers
-that can't keep up.
+that can't keep up; Settings → Graphics has a Low option for older laptops
+(no shadows or glow) and a High one for fast machines. The skyline is painted
+into a cube map a face at a time rather than redrawn every frame.
 
 ```
 public/

@@ -28,9 +28,10 @@ function cachedGeo(key, make) {
   if (!geos.has(key)) geos.set(key, make());
   return geos.get(key);
 }
-const rbox = (w, h, d, r = 0.02) => cachedGeo(`rb${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)));
-const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 24);
-const ballGeo = new THREE.SphereGeometry(1, 24, 16);
+const rbox = (w, h, d, r = 0.02) => cachedGeo(`rb${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)));
+const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 20);
+const ballGeo = new THREE.SphereGeometry(1, 20, 14);
+const leafGeo = new THREE.SphereGeometry(1, 10, 8);   // leaves are thin: their outline is all that shows
 
 function place(parent, geo, material, x, y, z) {
   const m = new THREE.Mesh(geo, material);
@@ -174,7 +175,7 @@ const build = {
       const bend = new THREE.Group();
       bend.rotation.x = tilt;
       stem.add(bend);
-      ball(bend, leaf[i % 2], 0, len, 0, 0.07, len * 0.55, 0.012);
+      place(bend, leafGeo, leaf[i % 2], 0, len, 0).scale.set(0.07, len * 0.55, 0.012);
     }
   },
   console(g) {

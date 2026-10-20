@@ -82,7 +82,7 @@ export function liftDoors(width = CAR.door, height = 2.2) {
   };
 }
 
-export function elevatorCar() {
+export function elevatorCar({ light: withLight = true } = {}) {
   const g = new THREE.Group();
   const { w, d, h } = CAR;
   const steel = mat(0xb0b2b4, { map: TX.brushed(), rough: 0.42, metal: 0.7, env: 0.5 });
@@ -121,8 +121,11 @@ export function elevatorCar() {
   screen.position.set(0, h - 0.12, -0.025);
   screen.rotation.y = Math.PI;
   g.add(screen);
-  const light = new THREE.PointLight(0xfff0dc, 2.6, 4, 2);
-  light.position.set(0, h - 0.3, -d / 2);
-  g.add(light);
+  let light = null;
+  if (withLight) {
+    light = new THREE.PointLight(0xfff0dc, 2.6, 4, 2);
+    light.position.set(0, h - 0.3, -d / 2);
+    g.add(light);
+  }
   return { group: g, display: disp, light, panel };
 }
