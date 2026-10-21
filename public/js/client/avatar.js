@@ -213,6 +213,7 @@ export class Actor {
     else T.dir.set(-Math.sin(this.ry), 0.45, -Math.cos(this.ry)).normalize();
     // a short beam indoors, so it doesn't poke out through the walls
     F.beam.scale.setScalar(far ? 1 : 0.3);
+    F.glow.scale.setScalar(far ? 0.45 : 0.22);
     F.beam.position.copy(T.pos);
     F.beam.quaternion.setFromUnitVectors(_down, T.dir);
   }

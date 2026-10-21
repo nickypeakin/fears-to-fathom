@@ -60,7 +60,7 @@ const finalFrag = /* glsl */`
     vec2 uv = vUv;
     vec2 c = (uv - 0.5) * vec2(aspect, 1.0);   // screen-height units
     float mask = 1.0;
-    float ca = fear * 0.006;
+    float ca = fear * 0.003;
 
     // tape tearing when something is very wrong
     if (glitch > 0.0) {

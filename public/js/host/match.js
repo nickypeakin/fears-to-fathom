@@ -708,6 +708,7 @@ export class Match {
     if (f.visit === 'peek' || f.fled) return;
     f.visit = 'peek';
     f.peeked = true;
+    this.setObjectives([{ id: 'shut', text: 'He\'s looking in at you. Shut the trapdoor on him!' }]);
     const flight = (x) => [x, CAB_Y - 2 + (2 * x) / 1.62, 0.52];
     w.light = true;
     w.walk([flight(0.6), flight(1.0)], { speed: 0.6, then: () => {
@@ -749,7 +750,7 @@ export class Match {
     // somebody opened the trapdoor on him while he was knocking
     if (f.visit === 'knock' && H.target > 0.5) this.peek();
     // or shut it on him while he was looking in
-    if (f.visit === 'peek' && H.target < 0.5 && H.lift <= 0) this.leaveNight();
+    if (f.visit === 'peek' && H.target < 0.5 && H.lift <= 0) { this.done('shut'); this.leaveNight(); }
     if (f.visit === 'climb' && H.bolt) this.done('bolt');
     if (f.fled) {
       if (H.bolt && H.open < 0.05) this.done('bolt');
