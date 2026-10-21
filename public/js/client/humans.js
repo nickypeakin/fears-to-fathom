@@ -833,7 +833,8 @@ function bake(group) {
 const ease = (cur, target, k) => cur + (target - cur) * k;
 
 // Poses: stand, walk (with speed), sit, knock, peep (lean to a peephole),
-// crouch, hidden, collapse, reach (arms out, for him), dead.
+// crouch, hidden, collapse, reach (arms out, for him), torch and wave (a
+// flashlight held up, for him), dead.
 export class Rig {
   constructor(p) {
     Object.assign(this, p);
@@ -937,6 +938,12 @@ export class Rig {
       // hands in coat pockets
       set('shLX', 0.12); set('shRX', 0.12); set('shLZ', -0.22); set('shRZ', 0.22); set('elL', -0.55); set('elR', -0.55);
       set('shLY', 0.3); set('shRY', -0.3);
+    } else if (pose === 'torch' || pose === 'wave') {
+      // a flashlight held out in the left hand, up at the tower; waving, the
+      // right arm up over his head, slowly, side to side
+      set('shLX', -2.05); set('shLZ', -0.12); set('elL', -0.08); set('wrL', 0.15);
+      set('neckX', -0.3); set('spineX', -0.05);
+      if (pose === 'wave') { set('shRX', -2.8); set('shRZ', 0.32 + Math.sin(t * 2.2) * 0.3); set('elR', -0.4); }
     } else if (pose === 'hold') {
       // holding something in front with both hands (a pizza, a toolbox)
       set('shLX', -0.55); set('shRX', -0.55); set('elL', -1.0); set('elR', -1.0); set('shLZ', -0.12); set('shRZ', 0.12);

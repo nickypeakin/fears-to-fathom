@@ -13,12 +13,16 @@ It opens with a cutscene: your pickup grinding up the last of the dirt road
 at sunset, and Ranger Pruitt handing the place over before he drives away.
 Then it's three days and two nights on the mountain:
 
-- **Day one.** Carry the supplies up the tower, start the generator, check
-  in with dispatch on the radio (they'll give you a code word: remember it).
+- **Day one.** Carry the two boxes of supplies up the tower, start the
+  generator, check in with dispatch on the radio (they'll give you a code
+  word: remember it).
   A hiker comes out of the woods and asks for water. What you tell him
   matters. His old logbook is on the desk.
-- **The first night.** Something wakes you after two. Footsteps on the
-  stairs. Knocking, from underneath the trapdoor in the floor.
+- **The first night.** Somebody breathing on the radio at two in the
+  morning. A flashlight down at the edge of the trees, pointed up at you
+  (look through the binoculars). Then the light goes out, there are
+  footsteps on the stairs, and knocking under the trapdoor in the floor.
+  Bolt it before he gets there, or slam it when he pushes it up.
 - **Day two.** Dispatch has a smoke report: find the smoke with the
   binoculars, take a bearing with the fire finder, and radio it in. Pull the
   pictures off the old elk camera by the outhouse. Then a man walks up the
@@ -105,9 +109,10 @@ clothes, hands), the mountain is a noise function, the forest is a few
 thousand instanced trees (simpler ones further away) on ground painted to
 look like forest from above, and every sound is synthesised. Spoken lines
 use the browser's own voices (Settings can turn them off; subtitles always
-show). The picture renders in HDR with bloom and an optional old-camcorder
-look, and drops resolution automatically on computers that can't keep up;
-Settings → Graphics has a Low option for older laptops. The far distance
+show). The picture renders in HDR with bloom and contrast-adaptive
+sharpening, plus an optional old-camcorder look (Settings). It draws at the
+screen's full resolution and gives a little of it up only on computers that
+can't keep up; Settings → Graphics has a Low option for older laptops. The far distance
 is painted into a cube map a face at a time rather than redrawn every frame.
 
 ```

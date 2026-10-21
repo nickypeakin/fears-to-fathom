@@ -41,13 +41,14 @@ const params = new URLSearchParams(location.search);
 // ?seg=3 starts the story at that part (for testing)
 const startAt = Math.max(0, Math.min(6, Number(params.get('seg')) || 0));
 const SETTINGS_KEY = 'cinder-peak';
-const settings = { name: '', sens: 1, vol: 0.8, invert: false, voices: true, grain: true, graphics: 'auto' };
+const settings = { name: '', sens: 1, vol: 0.8, invert: false, voices: true, vhs: false, graphics: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch { /* private mode */ }
+delete settings.grain;   // the old camcorder setting, which used to be on by default
 const save = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* private mode */ } };
 sound.volume = settings.vol;
 voice.volume = settings.vol;
 voice.enabled = settings.voices && !params.has('autotest');
-post.grainOn = settings.grain;
+post.grainOn = settings.vhs;
 
 const DEFAULT_NAMES = ['Alex', 'Sam', 'Jordan', 'Casey', 'Riley', 'Morgan', 'Jamie', 'Taylor', 'Jack', 'Nora'];
 $('name').value = settings.name || DEFAULT_NAMES[Math.floor(Math.random() * DEFAULT_NAMES.length)];
@@ -55,12 +56,12 @@ $('sens').value = settings.sens;
 $('vol').value = settings.vol;
 $('invert').checked = settings.invert;
 $('voices').checked = settings.voices;
-$('grain').checked = settings.grain;
+$('vhs').checked = settings.vhs;
 $('sens').addEventListener('input', (e) => { settings.sens = +e.target.value; save(); });
 $('vol').addEventListener('input', (e) => { settings.vol = +e.target.value; sound.setVolume(settings.vol); voice.volume = settings.vol; save(); });
 $('invert').addEventListener('change', (e) => { settings.invert = e.target.checked; save(); });
 $('voices').addEventListener('change', (e) => { settings.voices = e.target.checked; voice.enabled = settings.voices; if (!settings.voices) voice.stop(); save(); });
-$('grain').addEventListener('change', (e) => { settings.grain = e.target.checked; post.grainOn = settings.grain; save(); });
+$('vhs').addEventListener('change', (e) => { settings.vhs = e.target.checked; post.grainOn = settings.vhs; save(); });
 $('graphics').value = settings.graphics;
 $('graphics').addEventListener('change', (e) => { settings.graphics = e.target.value; save(); applyGraphics(); });
 
@@ -75,13 +76,15 @@ let solo = false;
 let backTo = 'title';
 let paused = false;
 
-// Graphics: 'auto' adapts the resolution to the computer, 'high' starts
-// sharp and keeps more detail, 'low' is for older laptops (smaller picture,
-// no shadows, no glow). `?scale=0.5` fixes the resolution (used by tests).
+// Graphics: 'auto' draws at the screen's full resolution and only gives a
+// little of it up on computers that can't keep up, 'high' keeps it all
+// (sharper still on high-density screens), 'low' is for older laptops
+// (smaller picture, no shadows, no glow). `?scale=0.5` fixes the resolution
+// (used by tests).
 const PRESETS = {
-  auto: { start: 0.85, min: 0.5, max: 1, maxDpr: 1.25, samples: 2, bloom: true, shadows: true, sky: { size: 768, every: 2 } },
-  high: { start: 1, min: 0.7, max: 1, maxDpr: 1.5, samples: 4, bloom: true, shadows: true, sky: { size: 1024, every: 1 } },
-  low: { start: 0.6, min: 0.45, max: 0.75, maxDpr: 1, samples: 0, bloom: false, shadows: false, sky: { size: 512, every: 3 } },
+  auto: { start: 1, min: 0.8, max: 1, maxDpr: 1.5, samples: 2, bloom: true, shadows: true, sky: { size: 1024, every: 2 } },
+  high: { start: 1, min: 1, max: 1, maxDpr: 2, samples: 4, bloom: true, shadows: true, sky: { size: 1536, every: 1 } },
+  low: { start: 0.7, min: 0.55, max: 0.85, maxDpr: 1, samples: 0, bloom: false, shadows: false, sky: { size: 640, every: 3 } },
 };
 const fixedScale = Number(params.get('scale')) || 0;
 let preset = PRESETS[settings.graphics] || PRESETS.auto;

@@ -477,6 +477,9 @@ export class Lookout {
       s.add(f, f.target);
       this.flashlights.push(f);
     }
+    // his flashlight
+    this.hisLight = new THREE.SpotLight(0xfff0d8, 0, 55, 0.2, 0.45, 1.1);
+    s.add(this.hisLight, this.hisLight.target);
     // headlights, for the drives
     this.headlights = new THREE.SpotLight(0xfff0d0, 0, 60, 0.5, 0.4, 1.2);
     s.add(this.headlights, this.headlights.target);
@@ -543,8 +546,16 @@ export class Lookout {
     }
   }
 
-  // flashes: [{ on, pos, dir }] for up to four flashlights
-  update(dt, t, { flashes = [] } = {}) {
+  // flashes: [{ on, pos, dir }] for up to four flashlights; his: his
+  // flashlight (or the elk camera's flash), { on, pos, dir, power }
+  update(dt, t, { flashes = [], his = null } = {}) {
+    const H = this.hisLight;
+    if (his && his.on) {
+      H.intensity = his.power || 45;
+      H.angle = his.angle || 0.2;
+      H.position.copy(his.pos);
+      H.target.position.copy(his.pos).add(his.dir);
+    } else H.intensity = 0;
     this.sky.update(t);
     this.land.update(t);
     for (let i = 0; i < this.flashlights.length; i++) {

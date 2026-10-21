@@ -6,7 +6,7 @@
 export const SEGMENTS = [
   { id: 'intro', title: '', from: 18.85, to: 19.1 },
   { id: 'day1', title: 'DAY ONE', sub: 'Evening', from: 19.1, to: 21.3, len: 420 },
-  { id: 'night1', title: 'THAT NIGHT', sub: '2:14 AM', from: 26.23, to: 27.3, len: 170 },
+  { id: 'night1', title: 'THAT NIGHT', sub: '2:14 AM', from: 26.23, to: 27.6, len: 240 },
   { id: 'day2', title: 'DAY TWO', sub: 'Morning', from: 8.3, to: 12.6, len: 460 },
   { id: 'evening2', title: 'THAT EVENING', sub: '6:40 PM', from: 18.65, to: 21.4, len: 260 },
   { id: 'night2', title: 'THE SECOND NIGHT', sub: '11:20 PM', from: 23.33, to: 29.0, len: 380 },
@@ -73,6 +73,11 @@ export const DISPATCH = {
     'If that\'s him, do not let him up. I\'ll have the sheriff swing by in the morning.',
   ],
   revealAgain: ['Stay inside tonight, Cinder Peak. Keep that trapdoor bolted.'],
+  // the first night, a voice on the channel at two in the morning
+  nightCall: ['(Static. Somebody keys the mic and breathes into it.)', '...Cinder Peak.', '...You awake up there?'],
+  nightCallReply: ['...Nobody. A neighbour.', 'Go back to bed, Cinder Peak. I\'ll keep an eye on you.'],
+  nightGoodnight: ['...Sleep tight, Cinder Peak.'],
+  morningCall: 'And Cinder Peak, somebody was keying up on this channel around two this morning. It wasn\'t us.',
   // him, pretending
   fake: ['Cinder Peak, dispatch. We\'ve got a deputy down at your gate. His truck\'s having trouble.', 'Need one of you to walk down and open it for him.'],
   fakeWord: ['...the word.', '...{wrong}.', 'Come on down anyway.'],
@@ -89,6 +94,8 @@ export const WADE = {
   took: 'Guess nobody minds.',
   leaving: 'Nice view up there. I used to love that view.',
   knock: ['I know you\'re awake.', 'Room for one more up there?', 'You left me out here.'],
+  peek: 'Just wanted to see who\'s sleeping in my bed.',
+  slammed: 'That wasn\'t very neighbourly.',
   relief: ['Hello up there! Ranger Pruitt sent me up!', 'Radio\'s been cutting in and out on your channel. I\'m supposed to look at your antenna.'],
   reliefBolted: 'You\'ll have to open the hatch for me.',
   inCab: ['Huh. You moved the cot.', 'Antenna looks fine to me.', 'You all have a good night now.'],
@@ -116,6 +123,7 @@ export const RADIO_LINES = {
   verify: 'Dispatch, did you send someone up here? Says Pruitt sent him.',
   stranger: 'There\'s a man hanging around the tower. Says his name is Wade.',
   help: 'Dispatch, Cinder Peak! We need help! Can anybody hear me?',
+  who: 'This is Cinder Peak. Who is this?',
 };
 
 // quick shouts, keys 1-4 when nobody's asking you anything

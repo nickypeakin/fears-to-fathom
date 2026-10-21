@@ -36,6 +36,7 @@ export class Wade {
     this.stuckT = 0;
     this.sideT = 0;
     this.lastSeen = 0;
+    this.light = false;     // his flashlight
   }
 
   spawn(x, y, z, ry = 0) {
@@ -44,6 +45,7 @@ export class Wade {
 
   despawn() {
     this.on = false;
+    this.light = false;
     this.mode = 'off';
     this.path = null;
     this.target = null;
@@ -258,7 +260,7 @@ export class Wade {
   }
 
   row() {
-    return [Math.round(this.x * 100) / 100, Math.round(this.y * 100) / 100, Math.round(this.z * 100) / 100, Math.round(this.ry * 100) / 100, this.anim];
+    return [Math.round(this.x * 100) / 100, Math.round(this.y * 100) / 100, Math.round(this.z * 100) / 100, Math.round(this.ry * 100) / 100, this.anim, this.light ? 1 : 0];
   }
 }
 

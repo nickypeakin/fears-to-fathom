@@ -76,6 +76,11 @@ export class Game {
     this.solids = new Solids(solidBoxes());
     this.word = null;
     this.lights = [];          // flashlights blinking in the trees
+    this.flashes = [];         // the elk camera going off
+    this.camGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TX.glow(), color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.camGlow.position.set(SPOTS.trailcam.x, SPOTS.trailcam.y, SPOTS.trailcam.z);
+    this.camGlow.scale.setScalar(2.2);
+    this.camGlow.visible = false;
 
     const W = world;
     W.setState({ gen: false, light: true, hatch: 0, bolt: false, door: 0, doorBolt: false, stove: false, cut: false, finder: 0, smoke: null, word: null });
@@ -87,6 +92,7 @@ export class Game {
     this.itemsView = new ItemsView(W.scene);
     this.wade = null;
     this.cutscene = new Cutscene(this, 'intro');
+    W.scene.add(this.camGlow);
     this.scare = makePerson('wade');
     this.scare.visible = false;
     W.scene.add(this.scare);
@@ -285,7 +291,18 @@ export class Game {
       case 'thump': sound.knock(HATCH_POS, 1, 1.6); break;
       case 'splinter': sound.splinter(HATCH_POS); break;
       case 'gone': break;
+      case 'click': sound.click({ x: m.x, y: m.y, z: m.z }); break;
+      case 'camFlash': this.camFlash(); break;
     }
+  }
+
+  // the elk camera by the outhouse goes off: two flashes, lighting up
+  // whatever walked in front of it
+  camFlash() {
+    const c = SPOTS.trailcam;
+    this.flashes.push({ t: 0, at: [0, 0.55] });
+    sound.shutter(c);
+    setTimeout(() => sound.shutter(c), 550);
   }
 
   // a flashlight blinking three times out in the trees, then nothing
@@ -346,7 +363,7 @@ export class Game {
       case 'escape': this.cutscene.update(dt); break;
     }
     this.zoom = this.mode === 'play' && this.carry === 'binocs' && inp.aiming;
-    if (this.zoom) this.lookForSmoke();
+    if (this.zoom) { this.lookForSmoke(); this.lookForHim(); }
 
     for (const a of this.avatars.values()) a.update(dt);
     if (this.wade) this.wade.update(dt, this.t, this.camera.position);
@@ -573,6 +590,20 @@ export class Game {
       this.spotSent = true;
       this.link.send({ t: 'spot' });
       this.hud.toast('There: a column of smoke off a far ridge. Now get a bearing on it with the fire finder.');
+    }
+  }
+
+  // the first night: the man with the flashlight, in the binoculars
+  lookForHim() {
+    const w = this.wade;
+    if (this.sawSent || !w || !w.light || !this.seg || this.seg.id !== 'night1') return;
+    const d = this.camera.getWorldDirection(this.tmp);
+    const c = this.camera.position;
+    const to = v3(w.x - c.x, w.y + 1.4 - c.y, w.z - c.z).normalize();
+    if (d.dot(to) > Math.cos(0.07)) {
+      this.sawSent = true;
+      this.link.send({ t: 'saw' });
+      this.hud.toast('A man, standing at the edge of the trees, holding the flashlight up at the tower. At you.');
     }
   }
 
@@ -859,7 +890,20 @@ export class Game {
         flashes.push({ on, pos: new THREE.Vector3(a.x, a.y + 1.45, a.z).addScaledVector(dir, 0.3), dir });
       }
     }
-    W.update(dt, this.t, { flashes });
+    // his flashlight, unless the elk camera's flash is going off
+    let his = this.wade && this.wade.torch.on ? this.wade.torch : null;
+    let lit = false;
+    for (const F of this.flashes) {
+      F.t += dt;
+      if (F.at.some((a) => F.t >= a && F.t < a + 0.12)) lit = true;
+    }
+    this.flashes = this.flashes.filter((F) => F.t < 1);
+    this.camGlow.visible = lit;
+    if (lit) {
+      const c = SPOTS.trailcam;
+      his = { on: true, pos: v3(c.x, c.y, c.z), dir: v3(-c.x, 1 - c.y, -c.z).normalize(), power: 160, angle: 1.0 };
+    }
+    W.update(dt, this.t, { flashes, his });
     // flashlights in the trees: three blinks, then gone
     for (const L of this.lights) {
       L.t += dt;
@@ -985,6 +1029,7 @@ export class Game {
     if (this.wade) this.wade.dispose();
     this.itemsView.dispose();
     for (const L of this.lights) L.sp.removeFromParent();
+    this.camGlow.removeFromParent();
     this.scare.removeFromParent();
     this.world.setState({ gen: true, light: true, hatch: 0, bolt: false, door: 0, doorBolt: false, cut: false, smoke: null, word: null });
   }

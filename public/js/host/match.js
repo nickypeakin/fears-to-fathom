@@ -7,7 +7,7 @@
 
 import { makeRng } from '../shared/rng.js';
 import { INTRO_LEN, SNAP_EVERY, REACH } from '../shared/config.js';
-import { CAB_Y, HATCH, BEDS, SPOTS, START_SPOTS, PLACES, KEY_HOOK, floorAt, inCab, upTop, hasSignal, Solids, HATCH_WALL, DOOR_WALL, UP_STAIRS, UNDER_HATCH, INTO_CAB, UP_LADDER, CATWALK_LOOP, OUTSIDE_DOOR, TREELINE, TRAIL, ROAD } from '../shared/layout.js';
+import { CAB_Y, HATCH, BEDS, SPOTS, START_SPOTS, PLACES, KEY_HOOK, floorAt, inCab, upTop, hasSignal, Solids, HATCH_WALL, DOOR_WALL, UP_STAIRS, UNDER_HATCH, INTO_CAB, UP_LADDER, CATWALK_LOOP, OUTSIDE_DOOR, TREELINE, TRAIL, ROAD, WATCH_SPOT, TO_STAIRS, PAST_CAMERA, INTO_TREES } from '../shared/layout.js';
 import { solidBoxes } from '../shared/forest.js';
 import { START_ITEMS } from '../shared/items.js';
 import { SEGMENTS, NARRATION, DISPATCH, WADE as LINES, ASK, WORDS, TEXTS, ENDINGS, RADIO_LINES, SHOUTS } from '../shared/story.js';
@@ -86,7 +86,7 @@ export class Match {
   item(kind) { for (const it of this.items.values()) if (it.kind === kind) return it; return null; }
   delivered() {
     let n = 0;
-    for (const it of this.items.values()) if ((it.kind === 'box' || it.kind === 'jug') && !it.holder && inCab(it.x, it.y, it.z)) n++;
+    for (const it of this.items.values()) if (it.kind === 'box' && !it.holder && inCab(it.x, it.y, it.z)) n++;
     return n;
   }
 
@@ -178,6 +178,7 @@ export class Match {
       case 'radio': this.radio(p, String(msg.k || '')); break;
       case 'mark': this.markBearing(p, Number(msg.b)); break;
       case 'spot': if (this.segId === 'day2' && p.zoom) this.done('spot'); break;
+      case 'saw': if (this.segId === 'night1' && p.zoom) this.sawWatcher(); break;
       case 'shout': if (SHOUTS[msg.k]) this.emit({ t: 'say', id: p.id, who: p.name, text: SHOUTS[msg.k], voice: 'friend', pos: [r2(p.x), r2(p.y + 1.6), r2(p.z)] }); break;
       case 'phone': this.phone(p, String(msg.k || '')); break;
       case 'read': p.read.add(String(msg.k)); break;
@@ -346,7 +347,8 @@ export class Match {
     if (this.smoke != null && !this.isDone('report')) o.push('smoke');
     if (f.cameraSeen && !f.cameraReported) o.push('camera');
     if (f.reliefAsked && !f.verified) o.push('verify');
-    if (f.metWade && !f.revealed && !f.reliefAsked) o.push('stranger');
+    if (f.metWade && !f.revealed && !f.reliefAsked && this.segId !== 'night1') o.push('stranger');
+    if (this.segId === 'night1' && f.call && !f.callAnswered && !f.fled) o.push('who');
     o.push('help');
     return o;
   }
@@ -361,6 +363,7 @@ export class Match {
     if (this.cut) { later(this, 2.4, () => this.radioSay(DISPATCH.dead, { who: '' })); return; }
     const f = this.flags;
     switch (k) {
+      case 'who': this.answerCall(); break;
       case 'checkin':
         f.checkedIn = true;
         this.radioSay(DISPATCH.checkin, { then: () => { this.emit({ t: 'word', word: this.word }); this.done('checkin'); } });
@@ -464,6 +467,9 @@ export class Match {
     this['start_' + S.id]();
   }
 
+  // `sec` seconds after the title card and the narrator have finished
+  afterCard(sec, fn) { later(this, Math.max(0, this.hold - this.t) + sec, fn); }
+
   // put someone somewhere (they're told, so their view jumps there too)
   place(p, x, y, z, ry = p.ry) {
     Object.assign(p, { x, y, z, ry });
@@ -490,7 +496,7 @@ export class Match {
   start_day1() {
     this.players.forEach((p, i) => this.place(p, START_SPOTS[i % 4].x, 0, START_SPOTS[i % 4].z, START_SPOTS[i % 4].ry));
     this.setObjectives([
-      { id: 'supplies', text: 'Carry the supplies up to the cab', of: 4 },
+      { id: 'supplies', text: 'Carry the two boxes of supplies up to the cab', of: 2 },
       { id: 'generator', text: 'Start the generator by the shed' },
       { id: 'checkin', text: 'Check in with dispatch on the radio' },
     ]);
@@ -499,7 +505,7 @@ export class Match {
   step_day1() {
     this.progress('supplies', this.delivered());
     const tasks = ['supplies', 'generator', 'checkin'].every((k) => this.isDone(k));
-    if (!this.flags.w1 && (this.segT > 75 || this.delivered() >= 2)) { this.flags.w1 = true; this.waterVisit(); }
+    if (!this.flags.w1 && (this.segT > 75 || this.delivered() >= 1)) { this.flags.w1 = true; this.waterVisit(); }
     if (!this.flags.dusk && ((tasks && this.flags.w1Done) || this.segT > SEGMENTS[1].len)) {
       this.flags.dusk = this.t;
       this.timeScale = 2.5;
@@ -567,52 +573,211 @@ export class Match {
     return best;
   }
 
-  // ---------------------------------------- the first night: the stairs
+  // ------------------------------------------ the first night: a visit
+  // The radio wakes you: somebody breathing on the channel. Then there's a
+  // flashlight at the edge of the trees, pointed up at the cab, and a man
+  // holding it. The light goes out; a minute later there are footsteps on
+  // the stairs, and knocking under the trapdoor. If it isn't bolted he
+  // pushes it up, and if nobody slams it he gets his head through. Then
+  // he's gone, past the elk camera and into the trees.
   start_night1() {
     this.toBeds();
     this.light = false;
-    this.hatch.open = this.hatch.target = 0;
+    this.hatch.open = this.hatch.target = this.hatch.lift = 0;
     this.door.angle = this.door.target = 0;
-    this.setObjectives([{ id: 'stairs', text: 'Something woke you up' }]);
-    const w = this.wade;
-    later(this, 3, () => {
-      w.spawn(...UP_STAIRS[0]);
-      w.walk([...UP_STAIRS.slice(1), UNDER_HATCH], { speed: 0.85, then: () => {
-        w.stand(0, 'reach');
-        this.knockSeq(3);
-        this.setObjectives([{ id: 'stairs', text: 'Someone is knocking on the trapdoor' }]);
-        this.flags.knockedAt = this.t;
-      } });
-    });
-    later(this, 70, () => this.emit({ t: 'fx', k: 'treeLight', x: 24, z: -18 }));
+    this.setObjectives([{ id: 'woke', text: 'Something woke you up' }]);
+    this.afterCard(2.5, () => this.nightCall());
   }
+
+  nightCall() {
+    const f = this.flags;
+    f.call = this.t;
+    this.radioSay(DISPATCH.nightCall, { who: 'Someone', voice: 'radioWade', then: () => {
+      if (!f.watch) this.setObjectives([{ id: 'answer', text: 'Somebody\'s on the radio. Answer it? (the radio\'s on the desk)', optional: true }]);
+    } });
+    later(this, 30, () => this.watcher());
+  }
+
+  // somebody answered the radio at two in the morning
+  answerCall() {
+    const f = this.flags;
+    f.callAnswered = true;
+    this.done('answer');
+    later(this, 2, () => this.radioSay(DISPATCH.nightCallReply, { who: 'Someone', voice: 'radioWade', then: () => later(this, 5, () => this.watcher()) }));
+  }
+
+  // a man at the edge of the trees, shining a flashlight up at the cab
+  watcher() {
+    const f = this.flags, w = this.wade;
+    if (f.watch || this.segId !== 'night1') return;
+    f.watch = this.t;
+    f.visit = 'watch';
+    w.spawn(...ground(...WATCH_SPOT));
+    w.face(0, 0);
+    w.stand(w.ry, 'torch');
+    w.light = true;
+    this.emit({ t: 'fx', k: 'click', x: w.x, y: w.y + 1.4, z: w.z });
+    this.setObjectives([{ id: 'light', text: 'There\'s a flashlight down in the trees, pointed at the tower. Look at it through the binoculars' }]);
+    later(this, 45, () => { if (f.visit === 'watch') this.watcherGone(); });
+  }
+
+  // somebody looked at him through the binoculars: he waves, slowly
+  sawWatcher() {
+    const f = this.flags;
+    if (f.visit !== 'watch' || f.waved) return;
+    f.waved = true;
+    this.done('light');
+    this.wade.stand(this.wade.ry, 'wave');
+    later(this, 4.5, () => { if (f.visit === 'watch') this.watcherGone(); });
+  }
+
+  // three blinks, then dark; then he walks to the stairs where you can't see him
+  watcherGone() {
+    const f = this.flags, w = this.wade;
+    f.visit = 'walk';
+    w.stand(w.ry, 'torch');
+    [0, 0.45, 0.9, 1.35, 1.8].forEach((at, i) => later(this, at, () => {
+      w.light = i % 2 === 1;
+      this.emit({ t: 'fx', k: 'click', x: w.x, y: w.y + 1.4, z: w.z });
+    }));
+    later(this, 2.2, () => {
+      if (!f.waved) this.done('light');
+      this.setObjectives([{ id: 'where', text: 'The light went out. Where did he go?' }]);
+    });
+    later(this, 4, () => w.walk(TO_STAIRS.map(([x, z]) => ground(x, z)), { ground: true, speed: 1.25, then: () => this.climb() }));
+  }
+
+  climb() {
+    const f = this.flags, w = this.wade;
+    f.visit = 'climb';
+    this.setObjectives([{ id: 'bolt', text: 'Footsteps on the stairs. Bolt the trapdoor!' }]);
+    w.walk([...UP_STAIRS, UNDER_HATCH], { speed: 1.0, then: () => this.atHatch() });
+  }
+
+  // under the trapdoor. Bolted: he knocks and talks and goes. Not bolted:
+  // he pushes it up. Already open: there he is.
+  atHatch() {
+    const f = this.flags, w = this.wade, H = this.hatch;
+    f.knockedAt = this.t;
+    w.stand(0, 'reach');
+    if (H.open > 0.5) { this.peek(); return; }
+    f.visit = 'knock';
+    this.knockSeq(3);
+    const stage = (at, fn) => later(this, at, () => { if (f.visit === 'knock' && !this.over) fn(); });
+    stage(2, () => this.say('', LINES.knock[0], { a: 'wade', voice: 'whisper' }));
+    stage(5, () => { if (!H.bolt) this.nightLift(); else this.emit({ t: 'fx', k: 'thump' }); });
+    stage(6, () => this.emit({ t: 'fx', k: 'thump' }));
+    stage(9, () => this.say('', LINES.knock[1], { a: 'wade', voice: 'whisper' }));
+    stage(14, () => this.knockSeq(4));
+    stage(17, () => this.say('', LINES.knock[2], { a: 'wade', voice: 'whisper' }));
+    stage(22, () => this.leaveNight());
+  }
+
+  // he pushes the trapdoor up, slowly: slam it, or he gets his head through
+  nightLift() {
+    const H = this.hatch, f = this.flags;
+    f.visit = 'lift';
+    H.lift = 0.01;
+    this.emit({ t: 'fx', k: 'hatchLift' });
+    this.setObjectives([{ id: 'slam', text: 'He\'s pushing the trapdoor up! Slam it shut!' }]);
+    const tick = () => {
+      if (this.over || f.visit !== 'lift') return;
+      if (H.lift <= 0) { this.slammed(); return; }
+      H.lift = Math.min(1, H.lift + 0.045);
+      if (H.lift >= 1) { H.lift = 0; H.target = 1; H.open = Math.max(H.open, 0.5); this.peek(); return; }
+      later(this, 0.4, tick);
+    };
+    tick();
+  }
+
+  slammed() {
+    const f = this.flags;
+    f.visit = 'slammed';
+    f.slammed = true;
+    this.done('slam');
+    this.knockSeq(6);
+    later(this, 3.5, () => this.say('', LINES.slammed, { a: 'wade', voice: 'whisper' }));
+    later(this, 9, () => this.leaveNight());
+  }
+
+  // his head and shoulders up through the hole in the floor, flashlight on
+  peek() {
+    const f = this.flags, w = this.wade;
+    if (f.visit === 'peek' || f.fled) return;
+    f.visit = 'peek';
+    f.peeked = true;
+    const flight = (x) => [x, CAB_Y - 2 + (2 * x) / 1.62, 0.52];
+    w.light = true;
+    w.walk([flight(0.6), flight(1.0)], { speed: 0.6, then: () => {
+      if (f.visit !== 'peek') return;
+      const p = this.nearestTo(w);
+      if (p) w.face(p.x, p.z);
+      w.stand(w.ry, 'torch');
+      this.emit({ t: 'fx', k: 'sting' });
+      this.say('', LINES.peek, { a: 'wade', voice: 'whisper' });
+      later(this, 5, () => { if (f.visit === 'peek') this.leaveNight(); });
+    } });
+  }
+
+  // back down the stairs, past the elk camera and into the trees
+  leaveNight() {
+    const f = this.flags, w = this.wade;
+    if (f.fled) return;
+    f.fled = true;
+    f.visit = 'gone';
+    w.light = false;
+    const quick = !!f.peeked;
+    w.walk([UNDER_HATCH, ...[...UP_STAIRS].reverse()], { speed: quick ? 2.6 : 1.3, then: () => {
+      w.walk(PAST_CAMERA.map(([x, z]) => ground(x, z)), { ground: true, speed: 1.5, then: () => {
+        this.emit({ t: 'fx', k: 'camFlash' });
+        w.walk(INTO_TREES.map(([x, z]) => ground(x, z)), { ground: true, speed: 1.5, then: () => w.despawn() });
+      } });
+    } });
+    if (f.water === 'gave') this.addItem('jar', -0.6, 12.0, 0.55);
+    else this.tank = false;
+    later(this, 5, () => this.setObjectives([
+      { id: 'look', text: f.water === 'gave' ? 'He left something on the stairs' : 'He\'s gone. For now', optional: f.water !== 'gave' },
+      { id: 'bolt', text: 'Shut and bolt the trapdoor' },
+      { id: 'sleep', text: 'Go back to bed', of: this.alive.length },
+    ]));
+  }
+
   step_night1() {
-    const w = this.wade, f = this.flags;
-    if (w.on && !f.fled && (this.hatch.open > 0.08 || (f.knockedAt && this.t > f.knockedAt + 26))) {
-      // gone, fast, down the stairs in the dark
-      f.fled = true;
-      const quick = this.hatch.open > 0.08;
-      const route = [...UP_STAIRS].reverse();
-      w.walk(route, { speed: quick ? 4.2 : 1.1, then: () => w.walk([ground(-14, -3), ground(-26, -6)], { ground: true, speed: quick ? 4 : 1.4, then: () => w.despawn() }) });
-      if (f.water === 'gave') this.addItem('jar', -0.6, 12.0, 0.55);
-      else this.tank = false;
-      later(this, 6, () => this.setObjectives([
-        { id: 'look', text: f.water === 'gave' ? 'He left something on the stairs' : 'Whoever it was is gone', optional: f.water !== 'gave' },
-        { id: 'bolt', text: 'Bolt the trapdoor' },
-        { id: 'sleep', text: 'Go back to bed', of: this.alive.length },
-      ]));
-    }
-    if (f.knockedAt && w.on && !f.fled && this.t > f.knockedAt + 13 && !f.knock2) { f.knock2 = true; this.knockSeq(4); }
+    const f = this.flags, H = this.hatch;
+    // somebody opened the trapdoor on him while he was knocking
+    if (f.visit === 'knock' && H.target > 0.5) this.peek();
+    // or shut it on him while he was looking in
+    if (f.visit === 'peek' && H.target < 0.5 && H.lift <= 0) this.leaveNight();
+    if (f.visit === 'climb' && H.bolt) this.done('bolt');
     if (f.fled) {
-      if (this.hatch.bolt && this.hatch.open < 0.05) this.done('bolt');
+      if (H.bolt && H.open < 0.05) this.done('bolt');
       const jar = this.item('jar');
       if (jar && jar.holder) this.done('look');
       if (this.isDone('bolt')) {
         if (!f.dusk) f.dusk = this.t;
-        this.sleepCheck('day2', 100);
+        // everybody back in bed: one more word on the radio, then morning
+        const inBed = this.alive.filter((p) => p.bed >= 0).length;
+        this.progress('sleep', inBed);
+        if (!f.goodnight && (inBed === this.alive.length || this.t - f.dusk > 100)) {
+          f.goodnight = true;
+          this.radioSay(DISPATCH.nightGoodnight, { who: 'Someone', voice: 'radioWade', then: () => later(this, 3, () => this.morning()) });
+        }
       }
     }
-    if (this.segT > SEGMENTS[2].len + 60) { f.dusk = this.t - 999; this.sleepCheck('day2', 0); }
+    if (this.segT > SEGMENTS[2].len + 60) this.morning();
+  }
+
+  morning() {
+    if (this.segId !== 'night1') return;
+    this.flags.dusk = null;
+    if (this.wade.on) this.wade.despawn();
+    this.toSegment(3);
+  }
+
+  // he chased someone up the stairs and the trapdoor's shut
+  hatchKnocked() {
+    this.knockSeq(3);
+    if (this.rng() < 0.6) later(this, 1.8, () => this.say('', this.rng.pick(LINES.knock), { a: 'wade', voice: 'whisper' }));
   }
 
   knockSeq(n) {
@@ -633,7 +798,7 @@ export class Match {
       { id: 'camera', text: 'Look at the photos on the elk camera by the outhouse' },
       { id: 'water', text: 'Refill the water jug (it\'s empty)' },
     ]);
-    later(this, 3, () => this.radioSay(DISPATCH.morning));
+    this.afterCard(3, () => this.radioSay(this.flags.call ? [...DISPATCH.morning, DISPATCH.morningCall] : DISPATCH.morning));
     later(this, 40, () => this.text(TEXTS.day2));
   }
   step_day2() {

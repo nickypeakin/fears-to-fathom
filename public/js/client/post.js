@@ -1,8 +1,10 @@
 // The final picture. Scenes render in HDR into a multisampled target; a
 // cheap two-level bloom makes lamps and the low sun glow; then one pass
-// tone-maps (ACES), adds grain and vignette (and, if you like, the wobble,
-// smear and scanlines of an old camcorder tape), letterboxes cutscenes,
-// fades, and, through the binoculars, masks the view to two round lenses.
+// tone-maps (ACES), sharpens (contrast-adaptive, harder when the picture
+// is being drawn below full resolution), adds a vignette (and, if you like,
+// the grain, wobble, smear and scanlines of an old camcorder tape),
+// letterboxes cutscenes, fades, and, through the binoculars, masks the view
+// to two round lenses.
 
 import * as THREE from 'three';
 
@@ -38,7 +40,7 @@ const blurFrag = /* glsl */`
 const finalFrag = /* glsl */`
   uniform sampler2D tex, bloomA, bloomB;
   uniform vec2 res;
-  uniform float aspect, time, exposure, bloom, grain, vignette, bars, fade, fear, staticAmt, glitch, binoc, vhs, saturation;
+  uniform float aspect, time, exposure, bloom, grain, vignette, bars, fade, fear, staticAmt, glitch, binoc, vhs, saturation, sharpen;
   uniform vec3 fadeColor;
   varying vec2 vUv;
 
@@ -46,11 +48,11 @@ const finalFrag = /* glsl */`
   vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 
   vec3 grab(vec2 uv, float ca) {
+    if (ca < 0.0001) return texture2D(tex, uv).rgb;
     vec3 c;
     c.r = texture2D(tex, uv + vec2(ca, 0.0)).r;
     c.g = texture2D(tex, uv).g;
     c.b = texture2D(tex, uv - vec2(ca, 0.0)).b;
-    c += (texture2D(bloomA, uv).rgb * 0.7 + texture2D(bloomB, uv).rgb * 0.9) * bloom;
     return c;
   }
 
@@ -58,7 +60,7 @@ const finalFrag = /* glsl */`
     vec2 uv = vUv;
     vec2 c = (uv - 0.5) * vec2(aspect, 1.0);   // screen-height units
     float mask = 1.0;
-    float ca = 0.0004 + fear * 0.006;
+    float ca = fear * 0.006;
 
     // tape tearing when something is very wrong
     if (glitch > 0.0) {
@@ -75,20 +77,35 @@ const finalFrag = /* glsl */`
       uv.x += sin(vUv.y * 36.0 + time * 1.7) * 0.0005 * vhs;
       float band = 1.0 - smoothstep(0.0, 0.012, abs(fract(vUv.y + time * 0.045) - 0.5));
       uv.x += band * 0.004 * vhs * h(vec2(floor(vUv.y * 300.0), time));
-      ca += 0.0013 * vhs;
+      ca += 0.0007 * vhs;
     }
     uv = 0.5 + (uv - 0.5) * (1.0 + fear * 0.02 * dot(c, c));
 
-    vec3 col = grab(uv, ca);
+    vec3 glow = (texture2D(bloomA, uv).rgb * 0.7 + texture2D(bloomB, uv).rgb * 0.9) * bloom;
+    float k = exposure;
     if (binoc > 0.5) {
       // two round lenses, a little overlapped
       float r = 0.43;
       float dl = length(c - vec2(-0.21, 0.0)), dr = length(c - vec2(0.21, 0.0));
       float d = min(dl, dr);
       mask = 1.0 - smoothstep(r - 0.02, r, d);
-      col *= 1.0 - 0.35 * smoothstep(r * 0.55, r, d);
+      k *= 1.0 - 0.35 * smoothstep(r * 0.55, r, d);
     }
-    col = aces(col * exposure);
+    vec3 col = aces((grab(uv, ca) + glow) * k);
+    if (sharpen > 0.0) {
+      // contrast-adaptive sharpening on the tone-mapped picture: crisp
+      // edges and texture without halos round the bright sky
+      vec2 px = 1.0 / res;
+      vec3 n = aces((texture2D(tex, uv + vec2(0.0, px.y)).rgb + glow) * k);
+      vec3 so = aces((texture2D(tex, uv - vec2(0.0, px.y)).rgb + glow) * k);
+      vec3 e = aces((texture2D(tex, uv + vec2(px.x, 0.0)).rgb + glow) * k);
+      vec3 w = aces((texture2D(tex, uv - vec2(px.x, 0.0)).rgb + glow) * k);
+      vec3 mn = min(col, min(min(n, so), min(e, w)));
+      vec3 mx = max(col, max(max(n, so), max(e, w)));
+      vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(0.0001)), 0.0, 1.0));
+      vec3 wt = amp * (-1.0 / mix(8.0, 4.5, sharpen));
+      col = clamp((col + (n + so + e + w) * wt) / (1.0 + 4.0 * wt), 0.0, 1.0);
+    }
     float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
     col = mix(vec3(l), col, saturation * (1.0 - 0.18 * vhs));
     if (vhs > 0.0) {
@@ -118,8 +135,8 @@ const finalFrag = /* glsl */`
 export class Post {
   constructor(renderer) {
     this.renderer = renderer;
-    this.grainOn = true;
-    this.maxDpr = 1.25;     // high-density screens render at up to this many pixels per CSS pixel
+    this.grainOn = false;   // the camcorder look (Settings)
+    this.maxDpr = 1.5;     // high-density screens render at up to this many pixels per CSS pixel
     this.bloomOn = true;
     const hdr = { type: THREE.HalfFloatType };
     this.target = new THREE.WebGLRenderTarget(4, 4, { ...hdr, samples: 2 });
@@ -135,7 +152,7 @@ export class Post {
       res: { value: new THREE.Vector2(4, 4) }, aspect: { value: 1 }, time: { value: 0 },
       exposure: { value: 1 }, bloom: { value: 0.8 }, grain: { value: 0.025 }, vignette: { value: 0.5 },
       bars: { value: 0 }, fade: { value: 0 }, fadeColor: { value: new THREE.Color(0, 0, 0) },
-      fear: { value: 0 }, staticAmt: { value: 0 }, glitch: { value: 0 }, binoc: { value: 0 }, vhs: { value: 0 }, saturation: { value: 1 },
+      fear: { value: 0 }, staticAmt: { value: 0 }, glitch: { value: 0 }, binoc: { value: 0 }, vhs: { value: 0 }, saturation: { value: 1 }, sharpen: { value: 0.5 },
     };
     this.final = mk(finalFrag, this.u);
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.final);
@@ -161,8 +178,11 @@ export class Post {
   // Full resolution (capped on high-density screens) times `quality`,
   // which drops on computers that can't keep up.
   setSize(w, h, quality = 1) {
-    const scale = Math.min(window.devicePixelRatio || 1, this.maxDpr) * quality;
+    const dpr = window.devicePixelRatio || 1;
+    const scale = Math.min(dpr, this.maxDpr) * quality;
     const rw = Math.max(2, Math.round(w * scale)), rh = Math.max(2, Math.round(h * scale));
+    // the further below the screen's own resolution, the harder it sharpens
+    this.u.sharpen.value = Math.min(1, 0.45 + Math.max(0, 1 - scale / dpr) * 1.4);
     this.target.setSize(rw, rh);
     const q = (t, d) => t.setSize(Math.max(1, Math.round(rw / d)), Math.max(1, Math.round(rh / d)));
     q(this.a1, 4); q(this.a2, 4); q(this.b1, 12); q(this.b2, 12);

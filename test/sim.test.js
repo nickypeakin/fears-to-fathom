@@ -38,7 +38,7 @@ function run(n, seed, plan) {
   step(SEGMENTS[1].from ? 30 : 0);
 
   // ---------------- day one: supplies, generator, radio, the water visit
-  const supplies = [...m.items.values()].filter((it) => it.kind === 'box' || it.kind === 'jug');
+  const supplies = [...m.items.values()].filter((it) => it.kind === 'box');
   supplies.forEach((it, k) => {
     const i = k % n;
     st(i, it.x, 0, it.z + 0.5);
@@ -48,7 +48,7 @@ function run(n, seed, plan) {
     m.handle(P(i).id, { t: 'drop' });
     step(0.3);
   });
-  check(m.delivered() === 4, `${seed}: four supplies delivered (got ${m.delivered()})`);
+  check(supplies.length === 2 && m.delivered() === 2, `${seed}: both boxes delivered (got ${m.delivered()})`);
   at(0, 'generator', -1.0);
   for (let k = 0; k < 6 && !m.gen.on; k++) { use(0, 'generator'); step(0.5); }
   check(m.gen.on, `${seed}: generator starts`);
@@ -65,22 +65,67 @@ function run(n, seed, plan) {
   waitSeg('night1', 200);
   check(m.segId === 'night1', `${seed}: night one`);
 
-  // ---------------- night one: the knocking
+  // ---------------- night one: the radio, the light, the stairs, the trapdoor
   step(m.hold - m.t + 0.1);
-  for (let k = 0; k < 60 && !m.flags.knockedAt; k++) step(1);
-  check(!!m.flags.knockedAt, `${seed}: he knocked on the trapdoor`);
-  if (plan.openHatch) {
-    m.handle(P(0).id, { t: 'use', k: 'bed0' });
+  for (let k = 0; k < 20 && !m.flags.call; k++) step(1);
+  check(!!m.flags.call, `${seed}: somebody on the radio`);
+  if (plan.answer) {
+    use(0, 'bed0');
+    at(0, 'radio');
+    step(12);
+    check(m.radioOptions().includes('who'), `${seed}: can answer the radio`);
+    m.handle(P(0).id, { t: 'radio', k: 'who' });
+    step(1);
+    check(m.flags.callAnswered, `${seed}: answered the radio`);
+  }
+  for (let k = 0; k < 60 && !m.flags.watch; k++) step(1);
+  check(!!m.flags.watch && m.wade.light, `${seed}: a flashlight in the trees`);
+  if (plan.binocs) {
+    if (P(0).bed >= 0) use(0, `bed${P(0).bed}`);
+    const b = [...m.items.values()].find((it) => it.kind === 'binocs');
+    st(0, b.x, CAB_Y, b.z + 0.6);
+    m.handle(P(0).id, { t: 'take', id: b.id });
+    st(0, 0.5, CAB_Y, -1.6, { zm: 1 });
+    m.handle(P(0).id, { t: 'saw' });
+    check(m.flags.waved && m.wade.anim === 'wave', `${seed}: he waves at whoever's watching`);
+    m.handle(P(0).id, { t: 'drop' });
+  }
+  if (plan.night === 'bolt') {
+    if (P(0).bed >= 0) use(0, `bed${P(0).bed}`);
+    at(0, 'hatchBolt', -1.0);
+    use(0, 'hatchBolt');
+    check(m.hatch.bolt, `${seed}: bolted the trapdoor before he came`);
+  }
+  for (let k = 0; k < 120 && !m.flags.knockedAt; k++) step(1);
+  check(!!m.flags.knockedAt, `${seed}: he came up the stairs and knocked on the trapdoor`);
+  if (plan.night === 'open') {
+    if (P(0).bed >= 0) use(0, `bed${P(0).bed}`);
     at(0, 'hatch', -1.0);
     use(0, 'hatch');
+    step(1);
+    check(m.flags.peeked, `${seed}: opened the trapdoor on him`);
+  }
+  if (plan.night === 'slam') {
+    for (let k = 0; k < 20 && !(m.hatch.lift > 0); k++) step(0.5);
+    check(m.hatch.lift > 0, `${seed}: he pushes the trapdoor up`);
+    if (P(0).bed >= 0) use(0, `bed${P(0).bed}`);
+    st(0, (HATCH.x0 + HATCH.x1) / 2, CAB_Y, HATCH.z1 + 0.5);
+    step(1);
+    use(0, 'hatch');
+    step(1);
+    check(m.flags.slammed && !m.flags.peeked, `${seed}: slammed it on him`);
   }
   for (let k = 0; k < 60 && !m.flags.fled; k++) step(1);
   check(m.flags.fled, `${seed}: he went away`);
-  step(3);
+  if (plan.night === 'peek') check(m.flags.peeked, `${seed}: with nobody stopping him, he looked in`);
+  if (plan.night === 'bolt') check(!m.flags.peeked && !m.flags.slammed, `${seed}: bolted, he only knocked`);
+  for (let k = 0; k < 120 && m.wade.on; k++) step(1);
+  check(!m.wade.on, `${seed}: he walked off into the trees`);
+  check(log.some((e) => e.msg.t === 'fx' && e.msg.k === 'camFlash'), `${seed}: the elk camera flashed as he went`);
   if (P(0).bed >= 0) use(0, `bed${P(0).bed}`);
-  if (m.hatch.target) { at(0, 'hatch', -1.0); use(0, 'hatch'); step(1.5); }
+  if (m.hatch.target || m.hatch.open > 0.05) { at(0, 'hatch', -1.0); use(0, 'hatch'); step(1.5); }
   at(0, 'hatchBolt', -1.0);
-  use(0, 'hatchBolt');
+  if (!m.hatch.bolt) use(0, 'hatchBolt');
   check(m.hatch.bolt, `${seed}: trapdoor bolted`);
   for (let i = 0; i < n; i++) { if (P(i).bed < 0) { intoCab(i); use(i, `bed${i}`); } }
   waitSeg('day2', 200);
@@ -99,7 +144,7 @@ function run(n, seed, plan) {
   m.handle(P(0).id, { t: 'drop' });
   m.handle(P(0).id, { t: 'mark', b: m.smoke + (plan.badBearing ? 25 : 2) });
   at(0, 'radio');
-  step(12);
+  step(30);
   m.handle(P(0).id, { t: 'radio', k: 'smoke' });
   step(12);
   if (plan.badBearing) {
@@ -203,11 +248,11 @@ function lastOver(log) {
 }
 
 const plans = [
-  { n: 1, water: 0, relief: 2, openHatch: true, badBearing: false, boltDoor: true, out: 'truck' },
-  { n: 2, water: 1, relief: 1, openHatch: false, badBearing: true, boltDoor: true, out: 'phone' },
-  { n: 3, water: 0, relief: 0, openHatch: true, badBearing: false, boltDoor: true, out: 'truck' },
-  { n: 4, water: -1, relief: 2, openHatch: false, badBearing: false, boltDoor: false, out: 'phone' },
-  { n: 2, water: 1, relief: 0, openHatch: true, badBearing: false, boltDoor: true, out: 'phone' },
+  { n: 1, water: 0, relief: 2, answer: true, binocs: true, night: 'slam', badBearing: false, boltDoor: true, out: 'truck' },
+  { n: 2, water: 1, relief: 1, answer: false, binocs: true, night: 'bolt', badBearing: true, boltDoor: true, out: 'phone' },
+  { n: 3, water: 0, relief: 0, answer: true, binocs: false, night: 'open', badBearing: false, boltDoor: true, out: 'truck' },
+  { n: 4, water: -1, relief: 2, answer: false, binocs: false, night: 'peek', badBearing: false, boltDoor: false, out: 'phone' },
+  { n: 2, water: 1, relief: 0, answer: true, binocs: true, night: 'peek', badBearing: false, boltDoor: true, out: 'phone' },
 ];
 plans.forEach((plan, k) => {
   const seed = `test${k}`;
@@ -216,8 +261,28 @@ plans.forEach((plan, k) => {
   const e = r.ending;
   check(!!e, `${seed}: reached an ending`);
   const states = r.m.players.map((p) => `${p.name}:${p.st}`).join(' ');
-  console.log(`${seed} | ${plan.n} player(s) | water:${r.m.flags.water} relief:${['up', 'check', 'no'][plan.relief]} out:${plan.out} | ending: ${e ? e.ending : 'none'} | ${states}`);
+  console.log(`${seed} | ${plan.n} player(s) | water:${r.m.flags.water} night:${plan.night} relief:${['up', 'check', 'no'][plan.relief]} out:${plan.out} | ending: ${e ? e.ending : 'none'} | ${states}`);
 });
+
+// a chase up the stairs that ends at a bolted trapdoor: he knocks, gives
+// up, and the game carries on
+{
+  const log = [];
+  const m = new Match({ seed: 'chase', roster: [{ id: 'p1', name: 'Ana', color: 0 }], send: (to, msg) => log.push(msg), start: 5 });
+  try {
+    for (let k = 0; k < (INTRO_LEN + 12) / TICK; k++) m.step(TICK);
+    const p = m.players[0];
+    m.handle(p.id, { t: 'st', x: -1.0, y: CAB_Y, z: 1.0, ry: 0, rx: 0, mv: 0 });
+    m.hatch.bolt = true;
+    m.wade.spawn(-4.5, 0, 0.5);
+    m.flags.wadeBusy = true;
+    m.wade.hunt(p);
+    for (let k = 0; k < 60 / TICK && m.wade.mode === 'hunt'; k++) m.step(TICK);
+    check(log.some((e) => e.t === 'fx' && e.k === 'hatchKnock'), 'chase: he knocked on the bolted trapdoor');
+    check(m.wade.mode !== 'hunt' && p.st === 'in', 'chase: he gave up and nobody was taken');
+    console.log('chase | a hunt up the stairs to a bolted trapdoor | ok');
+  } catch (e) { failures++; console.log('  FAIL: chase threw', e); }
+}
 
 if (failures) { console.log(`${failures} failure(s)`); process.exit(1); }
 console.log('all good');

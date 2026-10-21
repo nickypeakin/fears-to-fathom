@@ -251,6 +251,13 @@ export const UP_LADDER = [[-2.1, 12, 0], [-2.95, 12, 0], [-2.95, 14.0, 0], [-3.1
 export const CATWALK_LOOP = [[-3.05, 14, 3.05], [-3.05, 14, -3.05], [3.05, 14, -3.05], [3.05, 14, 3.05]];
 export const OUTSIDE_DOOR = [0, 14, 3.1];
 // at the edge of the trees, all round the clearing
+// the first night: where he stands with his flashlight (in plain view of
+// the window over the desk), his way round to the stairs, and his way off
+// past the elk camera
+export const WATCH_SPOT = [3.7, -21.2];
+export const TO_STAIRS = [[0.5, -12], [-6.5, -5.5], [-6, 0.52], [-2.3, 0.52]];
+export const PAST_CAMERA = [[-6, 1.5], [-8.5, 7], [-12.4, 10.4]];
+export const INTO_TREES = [[-14.6, 14.6], [-21, 19], [-28, 23]];
 export const TREELINE = [[21, -15], [23, 4], [-21, -4], [2, 23], [-5, -22], [-17, 15], [16, 18]].map(([x, z]) => [x, terrainH(x, z), z]);
 
 // ------------------------------------------------------------ collision

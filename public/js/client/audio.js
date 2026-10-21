@@ -440,6 +440,21 @@ class Sound {
     }
   }
 
+  // a flashlight switch
+  click(pos = null) {
+    if (!this.ctx) return;
+    this.burst(this.now, 0.012, this.out(pos), 0.25, 'bandpass', 2600, 4);
+  }
+
+  // the elk camera taking a picture: shutter, and the flash charging back up
+  shutter(pos) {
+    if (!this.ctx) return;
+    const t = this.now, dst = this.out(pos, 3);
+    this.burst(t, 0.02, dst, 0.35, 'bandpass', 3200, 3);
+    this.burst(t + 0.07, 0.015, dst, 0.25, 'bandpass', 2400, 3);
+    this.osc('sine', 5400, t + 0.15, 0.6, dst, 0.012, 0.2);
+  }
+
   // ------------------------------------------------------ things you do --
   pickup(kind) {
     if (!this.ctx) return;
