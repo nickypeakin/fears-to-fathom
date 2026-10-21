@@ -177,8 +177,10 @@ export class Match {
       case 'answer': if (this.ask && this.ask.id === msg.id && msg.k >= 0 && msg.k < this.ask.opts.length) this.closeAsk(msg.k | 0, p); break;
       case 'radio': this.radio(p, String(msg.k || '')); break;
       case 'mark': this.markBearing(p, Number(msg.b)); break;
-      case 'spot': if (this.segId === 'day2' && p.zoom) this.done('spot'); break;
-      case 'saw': if (this.segId === 'night1' && p.zoom) this.sawWatcher(); break;
+      // (these can arrive just ahead of the 'st' that says you're looking
+      // through the binoculars, so carrying them is enough)
+      case 'spot': if (this.segId === 'day2' && this.itemOf(p)?.kind === 'binocs') this.done('spot'); break;
+      case 'saw': if (this.segId === 'night1' && this.itemOf(p)?.kind === 'binocs') this.sawWatcher(); break;
       case 'shout': if (SHOUTS[msg.k]) this.emit({ t: 'say', id: p.id, who: p.name, text: SHOUTS[msg.k], voice: 'friend', pos: [r2(p.x), r2(p.y + 1.6), r2(p.z)] }); break;
       case 'phone': this.phone(p, String(msg.k || '')); break;
       case 'read': p.read.add(String(msg.k)); break;
@@ -617,7 +619,7 @@ export class Match {
     w.stand(w.ry, 'torch');
     w.light = true;
     this.emit({ t: 'fx', k: 'click', x: w.x, y: w.y + 1.4, z: w.z });
-    this.setObjectives([{ id: 'light', text: 'There\'s a flashlight down in the trees, pointed at the tower. Look at it through the binoculars' }]);
+    this.setObjectives([{ id: 'light', text: 'There\'s a flashlight down the road, pointed up at the tower. Look at it through the binoculars (south windows)' }]);
     later(this, 45, () => { if (f.visit === 'watch') this.watcherGone(); });
   }
 

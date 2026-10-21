@@ -85,7 +85,8 @@ function run(n, seed, plan) {
     const b = [...m.items.values()].find((it) => it.kind === 'binocs');
     st(0, b.x, CAB_Y, b.z + 0.6);
     m.handle(P(0).id, { t: 'take', id: b.id });
-    st(0, 0.5, CAB_Y, -1.6, { zm: 1 });
+    // (the 'saw' can arrive before the 'st' that says the binoculars are up)
+    st(0, 1.6, CAB_Y, 1.9);
     m.handle(P(0).id, { t: 'saw' });
     check(m.flags.waved && m.wade.anim === 'wave', `${seed}: he waves at whoever's watching`);
     m.handle(P(0).id, { t: 'drop' });

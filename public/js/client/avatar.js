@@ -208,8 +208,11 @@ export class Actor {
     if (!on) return;
     this.root.updateMatrixWorld(true);
     F.glow.getWorldPosition(T.pos);
-    if (Math.hypot(this.x, this.z) > 6) T.dir.set(-T.pos.x, CAB_Y + 1.3 - T.pos.y, -T.pos.z).normalize();
+    const far = Math.hypot(this.x, this.z) > 6;
+    if (far) T.dir.set(-T.pos.x, CAB_Y + 1.3 - T.pos.y, -T.pos.z).normalize();
     else T.dir.set(-Math.sin(this.ry), 0.45, -Math.cos(this.ry)).normalize();
+    // a short beam indoors, so it doesn't poke out through the walls
+    F.beam.scale.setScalar(far ? 1 : 0.3);
     F.beam.position.copy(T.pos);
     F.beam.quaternion.setFromUnitVectors(_down, T.dir);
   }
