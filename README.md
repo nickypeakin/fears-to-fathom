@@ -37,7 +37,7 @@ Then it's three days and two nights on the mountain:
 Anyone caught alone on the ground in the dark is fair game. Bolt the
 trapdoor behind you; bolt the door. How it ends depends on what you did.
 
-**Play it:** <https://nickypeakin.github.io/gsgs/>. It works in Chrome, Edge
+**Play it:** <https://nickypeakin.github.io/fears-to-fathom/>. It works in Chrome, Edge
 or Firefox on a computer with a keyboard and mouse. Headphones help. A full
 playthrough takes about half an hour.
 
